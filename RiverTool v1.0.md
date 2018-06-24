@@ -5,7 +5,8 @@
 ②然后根据用户Inspector界面提示信息，将需要填写的地形信息进行填写。用户界面有一些简单操作的描述
 
 ![](https://i.loli.net/2018/06/24/5b2f4014b6279.png)
-![](https://i.loli.net/2018/06/24/5b2f402971912.png)
+
+![](https://i.loli.net/2018/06/24/5b2f43573d0ae.png)
 
 ③接下来我们在编辑界面，按住Crtl+鼠标左键点选路径点，并且设置控制柄
 
@@ -70,11 +71,10 @@ public class Build_River_ToolEditor : Editor
             EditorGUI.indentLevel++;
 
             //增加一个点的Folder
-            EditorGUILayout.LabelField("注意-----每次点选激活河流工具的时候 ，初始地形都会随着变化");
-            EditorGUILayout.LabelField("注意-----所以请在建立一条河流的时候，不要再切换出窗口，否则还原地形操作无效");
-            EditorGUILayout.LabelField("注意-----点选路径点的时候，我们得到的是河床，点击创建河流才会创建出水域");
-            EditorGUILayout.LabelField("注意-----移除路径点的时候，会还原地形");
-            
+            EditorGUILayout.LabelField("注意-----每次选定完路径点之后");
+            EditorGUILayout.LabelField("注意-----请先点击一次创建河床");
+            EditorGUILayout.LabelField("注意-----再进行其他操作");
+
             EditorGUILayout.BeginHorizontal();
             showPositions = EditorGUILayout.Foldout(showPositions, "Points");
             EditorGUILayout.EndHorizontal();
