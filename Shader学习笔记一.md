@@ -188,12 +188,13 @@ Shader "Unity Shaders Book/Chapter 5/Simple Shader"
 	SubShader{
 		Pass{
 			CGPROGRAM 
-		
+			
+			//这是在告诉Unity 这个部分的代码块是一个顶点/片元着色器
 			#pragma vertex vert
 			#pragma fragment frag
 	
 			float4 vert(float4 v : POSITION) : SV_POSITION{
-				return UnityObjectToClipPos(v);
+				return mul(UNITY_MATRIX_MVP,v);
 			}
 			fixed4 frag():SV_Target{
 				return fixed4(1.0,1.0,1.0,1.0);
@@ -230,13 +231,75 @@ float4 vert(float4 v : POSITION) : SV_POSITION{
 }
 ```
 
-这是本例子中使用的顶点着色器代码，它是逐哥顶点执行的。vert函数的输入v包含了这个顶点的位子，
+这是本例子中使用的顶点着色器代码，它是逐个顶点执行的。vert函数的输入v包含了这个顶点的位子，
 这是通过POSITION语义指定的，它的返回值是一个float4类型的变量，它是该顶点在裁剪空间中的位子
 ，POSITION和SV_POSITION都是CG/HLSL中的语义，他们是不能够省略的，这些语义将告诉系统用户
 需要哪些输入值，以及用户的输出是什么。
 
+然后我们再来看一下frag函数：
 
+```Shader
+fixed4 frag():SV_Target{
+	return fixed4(1.0,1.0,1.0,1.0);
+}
+```
 
+在这个例子中，frag函数没有任何输入。他的输出是一个fixed4类型的变量，并且使用了SV_Target
+语义进行限定。SV_Target也是HLSL中的一个系统语义，它等同于告诉渲染器，把用户的输出颜色保存
+到一个渲染目标中，这里将输出到默认的帧缓存中。片元着色器中的代码很简单，返回了一个表示白色
+的fixed4类型的变量。片元着色器输出的颜色的每个分量范围在【0,1】，其中（0,0,0）是黑色，相反
+就是白色。
+
+接下来，我们想要得到更多的模型数据的话，将内容修改变成结构体即可：
+
+```Shader
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+Shader "Unity Shaders Book/Chapter 5/Simple Shader"
+{
+	SubShader{
+		Pass{
+			CGPROGRAM 
+			
+			//这是在告诉Unity 这个部分的代码块是一个顶点/片元着色器
+			#pragma vertex vert
+			#pragma fragment frag
+			struct a2v{
+				//POSITION 语义告诉Unity，用模型空间的顶点坐标来填充vertex变量
+				//NORMAL 语义告诉Unity，用模型空间的法线方向来填充normal变量
+				//TEXCOORD0 语义告诉Unity，用模型的第一套纹理坐标填充texcoord变量
+				float4 vertex: POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
+			float4 vert(a2v v) : SV_POSITION{
+				return mul(UNITY_MATRIX_MVP,v.vertex);
+			}
+			fixed4 frag():SV_Target{
+				return fixed4(0.2,0.3,0.4,0.5);
+			}
+
+			ENDCG
+		}
+	}
+}
+```
+
+在上边的代码中，我们声明了一个新的结构体a2v，它包含了顶点着色器需要的模型数据。
+在a2v的定义中，我们用到了更多Unity支持的语义，如NORMAL和TEXCOORD0,当他们作为
+顶点着色器的输入的时候都是有特定的含义的。因为Unity会根据这些语义来填充这个结构体
+对于顶点着色器的输出，Unity支持的语义有：POSITION,TANGENT,NORMAL,TEXCOORD0，
+TEXCOORD1............COLOR等。
+
+为了创建一个自定义的结构体，我们必须使用如下格式来定义他：
+
+```Shader
+struct StructName{
+	Type Name : Semantic;
+	Type Name : Semantic;
+	.......
+}
+```
 
 
 
