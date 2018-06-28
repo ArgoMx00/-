@@ -1,3 +1,5 @@
+关于Shader
+
 一、什么是Shader?
 ①GPU流水线上一些可高度编程的阶段，而由着色器编译出来的最终代码是会在GPU上运行的
 
@@ -122,6 +124,119 @@ Shader "Unlit/Study_Shader"
 	}
 }
 ```
+
+五、表面着色器
+
+表面着色器被定义在SubShader语义块中的CGPROGRAM 和ENDCG之间。原因是，表面着色器不需要开发者
+关心使用多少个Pass、每个Pass如何渲染等问题，Unity会在背后为我们做好这些事情，我们要做的只是
+告诉他：“嘿，使用这些纹理去填充颜色，使用这个法线纹理去填充法线、使用Lambert光照模型，其他的
+别来烦我！”。
+
+CGPROGRAM和ENDCG之间的代码是用CG/HLSL编写的，也就是说，我们需要把CG/HLSL语言嵌套在ShaderLab
+语言中。值得注意的是，这里的CG/HLSL是Unity经过封装后提供的，它的语法和标准的CG/HLSL语法几乎
+一样，但还是有细微的不同，例如有些原生的函数和用法Unity就并没有提供支持。
+
+六、顶点/片元着色器
+
+在Unity中，我们可以使用CG/HLSL语言来编写顶点/片元着色器。他们更加复杂，但是灵活性也更高。
+和表面着色器类似，顶点/片元的着色器也要卸载CGPROGRAM和ENDCG之间，但不同的是，顶点/片元
+着色器是写在Pass语义块内，而非SubShader内的。原因是，我们需要自己另一每个Pass需要使用的
+Shader代码。虽然我们可能需要编写更多的代码，但带来的好处是灵活性更高。更加重要的是，我们
+可以控制渲染的实现细节，同样，这里的CGPROGRAM和ENDCG之间的代码也是使用CG/HLSL编写的。
+
+七、选择哪种Unity Shader形式？
+
+①除非你有非常明确的需求必须要使用固定函数着色器，否则请使用可编程管线的着色器，即表面着色器
+或顶点/片元着色器。
+
+②如果我想和各种光源打交道，那么我们可能更喜欢使用表面着色器，但是需要小心它在移动平台的性能
+表现。
+
+③如果你需要使用的光照数目非常少，例如只有一个平行光，那么使用顶点/片元着色器是一个更好的选择。
+
+④更加重要的是，如果你有很多自定义的渲染效果，那么请选择使用顶点/片元着色器。
+
+学习Shader的数学基础
+
+一、向量、点、矩阵。
+
+其中矩阵内容较为复杂：
+
+①可逆的==非奇异的、不可逆的==奇异的 M*M(-1)=I
+
+②M*MT=MT*M=I 是正交矩阵
+
+二、空间坐标
+
+
+
+初级篇
+
+在基础篇中，我们学习了渲染流水线，并且给出了Unity Shader的基本概况，同时还打下了一定的数学基础
+从本章开始，我们将真正的学习如何在Unity中编写Unity Shader
+
+一、顶点/片元着色器的基本结构
+
+一个简单的实例：
+
+
+```c#
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+Shader "Unity Shaders Book/Chapter 5/Simple Shader"
+{
+	SubShader{
+		Pass{
+			CGPROGRAM 
+		
+			#pragma vertex vert
+			#pragma fragment frag
+	
+			float4 vert(float4 v : POSITION) : SV_POSITION{
+				return UnityObjectToClipPos(v);
+			}
+			fixed4 frag():SV_Target{
+				return fixed4(1.0,1.0,1.0,1.0);
+			}
+
+			ENDCG
+		}
+	}
+}
+```
+
+首先，代码的第一行通过Shader语义定义了这个Unity Shader的名字。保持良好的命名习惯有助于我们
+在为材质球选择Shader时快速找到自定义的Unity Shader。需要注意的是，在上边的代码中我们并没有
+用到Properties语义块。Properties语义块不是必须的，我们可以选择不声明任何材质属性。
+
+然后，我们声明了SubShader和Pass语义块。在本例中，我们不需要进行任何渲染设置和标签设置，因此
+SubShader将使用默认的渲染设置和标签设置。在SubShader语义块中，我们定义了一个Pass，在这个Pass
+中我们同样没有进行任何自定义的渲染设置和标签设置。
+
+接着，就是由CGPROGRAM 和ENDCG所包围的CG代码片段。这是我们的重点。首先，我们遇到了两行非常重要
+的编译指令：
+
+#pragma vertex vert（name）
+#pragma fragment farg（name）
+
+它们将告诉Unity，哪个函数包含了顶点着色器的代码，哪个函数包含了片元着色器的代码。相当于在声明
+，这一部分代码块，是控制顶点/片元着色器的部分。
+
+接下来，我们具体看一下vert函数的定义：
+
+```Shader
+float4 vert(float4 v : POSITION) : SV_POSITION{
+	return mul(UNITY_MATRIX_MVP,v);
+}
+```
+
+这是本例子中使用的顶点着色器代码，它是逐哥顶点执行的。vert函数的输入v包含了这个顶点的位子，
+这是通过POSITION语义指定的，它的返回值是一个float4类型的变量，它是该顶点在裁剪空间中的位子
+，POSITION和SV_POSITION都是CG/HLSL中的语义，他们是不能够省略的，这些语义将告诉系统用户
+需要哪些输入值，以及用户的输出是什么。
+
+
+
 
 
 
