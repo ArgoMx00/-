@@ -301,9 +301,102 @@ struct StructName{
 }
 ```
 
+这里边，语义是不可以进行省略的。
+填充到POSITION,TANGENT,NORMAL这些语义中的数据究竟是从哪里来的呢？在Unity中，它们
+是由使用该材质的Mesh Render组件提供的。在每帧调用Draw Call的时候，Mesh Render组件
+会把他负责渲染的模型数据发送给Unity Shader。我们知道，一个模型通常包含了一组三角面片，
+每个三角面片由三个顶点组成，而每个顶点又包含了一些数据，例如位子、法线、切线、纹理坐标、
+顶点颜色等，通过上面的方法自定义结构体，我们就可以在顶点着色器中访问这些顶点的模型数据。
+
+二、顶点着色器和片元着色器之间的通信
+
+a2v---->应用于顶点着色器---->通常作为顶点着色器的读入
+
+v2f---->应用于片元着色器---->通常作为顶点着色器的输出，片元着色器的读入
+
+这样，用两个结构体就能够将顶点着色器和片元着色器相连通了。
+
+那么我们看这样一个实例：
+
+```Shader
+
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+Shader "Unity Shaders Book/Chapter 5/Simple Shader" {
+	//注意属性后边不能有分号
+	Properties{
+		_Color("Color Tint",Color)=(1.0,1.0,1.0,1.0)
+	}
+	SubShader{
+		Pass{
+			CGPROGRAM
+			
+			//告诉Unity 这部分代码块中的内容是顶点/片元着色器
+			#pragma vertex vert
+			#pragma fragment frag
+
+			//在CG代码中，我们必须定义一个与属性名称和类型都匹配的变量
+			uniform fixed4 _Color;
+
+			//a2v 表示的是应用到顶点着色器，一般用于顶点着色器的输入
+			struct a2v{
+				//POSITION 语义告诉Unity，用模型空间的顶点坐标来填充vertex变量
+				//NORMAL 语义告诉Unity，用模型空间的法线方向来填充normal变量
+				//TEXCOORD0 语义告诉Unity，用模型的第一套纹理坐标填充texcoord变量
+				float4 vertex : POSITION;
+				float3 normal : NORMAL;
+				float4 texcoord :TEXCOORD0;
+			};
+			//v2f 表示的是应用到片元着色器，是顶点着色器的输出，片元着色器的输入
+			struct v2f{
+				//SV_POSITION 语义告诉Unity，pos里包含了顶点在裁剪空间中的位子信息
+				//COLOR0语义可以用于存储颜色信息
+			    float4 pos : SV_POSITION;
+				fixed3 color :COLOR0;
+			};
+
+			v2f vert(a2v v) {
+				//声明输出结构
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);//o.pos=mul(UNITY_MATRIX_MVP,v.vertex);
+				//v.normal 包含了顶点的法线方向，其分量在【-1，1】之间。
+				//下边的代码把分量的范围映射到了【0，1】；
+				//存储到o.color中传递给片元着色器。
+				o.color= v.normal * 0.5 +fixed3(0.5,0.5,0.5);
+				return o;
+			}
+
+			fixed4 frag (v2f i): SV_Target{
+				fixed3 c=i.color;
+				//使用Color属性来控制输出的颜色。
+				c*=_Color.rgb;
+				return fixed4(c,1.0);
+			}
+
+			ENDCG
+		}
+	}
+}
+```
+
+在实践中，我们往往希望从顶点着色器输出一些数据之后，传递给片元着色器，实现两者之间的通信，
+那么我们按照上述过程来控制shader的颜色，就可以实现出来。
+
+同时我们再引入属性，利用属性来控制着色器显示的颜色。在上边的代码中，我们首先添加了Properties
+语义块中，并且在其中声明了一个属性_Color，它的类型是Color，初始值是一个白色，为了在CG代码中
+访问到他，我们还需要在CG代码片段中提前定义一个新的变量，注意这个变量的名称和类型必须和属性语义块
+中的属性定义相匹配。
+
+整个代码的含义其实就是在实现对应顶点法线方向所带来的值的颜色。
+
+我们此时shader赋予给一个球体的显示效果如下：
 
 
-
+![](https://i.loli.net/2018/06/28/5b34bfd9029ef.png)
 
 
 
