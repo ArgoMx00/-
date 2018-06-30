@@ -515,12 +515,90 @@ Cdiffuse=（Clight*Mdiffuse）*max（0，n*I）
 
 漫反射的计算公式：Cdiffuse=（Clight*Mdiffuse）*max（0，n*I）
 
-接下来我们进行实践：
+接下来我们进行实践,学习逐个点进行漫反射的效果：
+
+```Shader
+// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+Shader "Unity Shaders Book/Chapter 6/Diffuse Vertex-Level"
+{
+	Properties{
+		_Diffuse("Diffuse" , Color)=(1,1,1,1)
+	}
+	SubShader{
+		Pass{
+			//LightMode标签是Pass标签中的一种，在第九章我们会更加详细的解释他
+			//在这里我们只要知道，只有定义了正确的LightMode我们才能得到一些Unity
+			//中的内置光照变量，例如下边要讲到的_LightColor
+			Tags{"LightMode"="ForwardBase"}
+			//接下来我们写CG代码片
+			CGPROGRAM
+
+			//告诉Unity这一部分代码是要在顶点/片元着色器上工作的。
+			#pragma vertex vert
+			#pragma fragment frag
+
+			//为了使用Unity中的内置一些变量，我们还需要包含内置文件Lighting.cginc
+			#include "Lighting.cginc"
+
+			//为了要在这一部分代码块中使用颜色，我们必须重新定义一个新的该属性的东西。
+			fixed4 _Diffuse;
+
+			//接下来我们要实现顶点/片元着色器之间的通信，那么一定要有输入和输出的结构体。
+			struct a2v{
+				float4 vertex : POSITION;
+				float3 normal : NORMAL;
+			};
+
+			struct v2f{
+				float4 pos : SV_POSITION;
+				fixed3 color: COLOR;
+			};
+
+			//下一步我们需要在顶点着色器中，计算每个点的漫反射情况
+
+			v2f vert (a2v v){
+				//首先我们定义一个返回值o
+				v2f o;
+				//顶点着色器最基本的任务就是将顶点位子从模型空间转换到裁剪空间中。
+				o.pos=UnityObjectToClipPos(v.vertex);
+
+				//得到环境光的坐标信息。
+				fixed3 ambient =UNITY_LIGHTMODEL_AMBIENT.xyz;
+				
+				//如果光源方向的计算不具有通用性是不能进行计算的
+				//只有两者处于同一坐标空间下，他们的dot才有意义，
+				//所以我们将其都转换到世界空间中。
+				fixed3 worldNormal=normalize(mul(unity_ObjectToWorld,v.normal));
+				fixed3 worldLight=normalize(_WorldSpaceLightPos0.xyz);
+				
+				//计算漫反射
+				fixed3 diffuse =_LightColor0.rgb*_Diffuse.rgb*saturate(dot(worldNormal,worldLight));
+				
+				//将环境光和漫发射的光相加，得到最终光照的结果。
+				o.color=diffuse+ambient;
+				
+				return o;
+			}
+
+			//对于我们的片元着色器，我们直接将其颜色进行输出即可。
+			fixed4 frag(v2f i) : SV_Target{
+				return fixed4(i.color,1.0);
+			}
 
 
+			ENDCG
+		}
+	}
+	Fallback"Diffuse"
+}
 
+```
 
+实际运行效果：
 
+![](https://i.loli.net/2018/06/30/5b3729ae39940.png)
 
 
 
