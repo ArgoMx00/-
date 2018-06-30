@@ -867,6 +867,14 @@ Shader"Unity Shaders Book/Chapter 6/高光反射逐像素Phong方法"
 
 在这里，我们就不多浪费时间去写Blinn-Phong模型的结果了。这里我们对光照的Shader部分告一段落。
 
+最后给出一个很多函数的表
+
+![](https://i.loli.net/2018/06/30/5b374fe9ba280.png)
+
+
+
+
+
 
 
 
