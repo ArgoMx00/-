@@ -601,11 +601,93 @@ Shader "Unity Shaders Book/Chapter 6/Diffuse Vertex-Level"
 ![](https://i.loli.net/2018/06/30/5b3729ae39940.png)
 
 
+接下来我们尝试一下用片元着色器，逐个像素的将其渲染。
+
+代码内容及其相近，只是我们在片元着色器中，同时计算和渲染管线，使得结果更加平滑了：
+
+```Shader
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+Shader "Unity Shaders Book/Chapter 6/Diffuse Vertex-Level"
+{
+	Properties{
+		_Diffuse("Diffuse" , Color)=(1,1,1,1)
+	}
+	SubShader{
+		Pass{
+			//LightMode标签是Pass标签中的一种，在第九章我们会更加详细的解释他
+			//在这里我们只要知道，只有定义了正确的LightMode我们才能得到一些Unity
+			//中的内置光照变量，例如下边要讲到的_LightColor
+			Tags{"LightMode"="ForwardBase"}
+			//接下来我们写CG代码片
+			CGPROGRAM
+
+			//告诉Unity这一部分代码是要在顶点/片元着色器上工作的。
+			#pragma vertex vert
+			#pragma fragment frag
+
+			//为了使用Unity中的内置一些变量，我们还需要包含内置文件Lighting.cginc
+			#include "Lighting.cginc"
+
+			//为了要在这一部分代码块中使用颜色，我们必须重新定义一个新的该属性的东西。
+			fixed4 _Diffuse;
+
+			//接下来我们要实现顶点/片元着色器之间的通信，那么一定要有输入和输出的结构体。
+			struct a2v{
+				float4 vertex : POSITION;
+				float3 normal : NORMAL;
+			};
+
+			struct v2f{
+				float4 pos : SV_POSITION;
+				fixed3 worldNormal :TEXCOORD0;
+			};
 
 
+			v2f vert (a2v v){
+				//首先我们定义一个返回值o
+				v2f o;
+
+				//顶点着色器不需要计算光照模型，只需要把世界空间下的法线传递给片元着色器即可。
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=mul((float3x3)unity_ObjectToWorld,v.normal);
+				return o;
+			}
+
+			
+			fixed4 frag(v2f i) : SV_Target{
+				fixed3 ambient =UNITY_LIGHTMODEL_AMBIENT.xyz;
+				
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(_WorldSpaceLightPos0.xyz);
+				
+				//计算漫反射
+				fixed3 diffuse =_LightColor0.rgb*_Diffuse.rgb*saturate(dot(worldNormal,worldLightDir));
+				
+				//将环境光和漫发射的光相加，得到最终光照的结果。
+				fixed3 color=diffuse+ambient;
+				
+				return fixed4 (color,1.0);
+			}
 
 
+			ENDCG
+		}
+	}
+	Fallback"Diffuse"
+}
+```
 
+实际效果如下：
+
+![](https://i.loli.net/2018/06/30/5b372c78e220e.png)
+
+我们在U3d中确实能够观察到，片元着色器处理出来的结果更加平滑一些（逐个像素去处理）。
+
+四、半兰伯特模型
 
 
 
