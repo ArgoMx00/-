@@ -1,4 +1,4 @@
-关于Shader
+<table><tr><td bgcolor=orange>关于Shader</td></tr></table>
 
 一、什么是Shader?
 ①GPU流水线上一些可高度编程的阶段，而由着色器编译出来的最终代码是会在GPU上运行的
@@ -156,7 +156,7 @@ Shader代码。虽然我们可能需要编写更多的代码，但带来的好�
 
 ④更加重要的是，如果你有很多自定义的渲染效果，那么请选择使用顶点/片元着色器。
 
-学习Shader的数学基础
+<table><tr><td bgcolor=orange>学习Shader的数学基础</td></tr></table>
 
 一、向量、点、矩阵。
 
@@ -170,7 +170,7 @@ Shader代码。虽然我们可能需要编写更多的代码，但带来的好�
 
 
 
-初级篇
+<table><tr><td bgcolor=orange>初级篇</td></tr></table>
 
 在基础篇中，我们学习了渲染流水线，并且给出了Unity Shader的基本概况，同时还打下了一定的数学基础
 从本章开始，我们将真正的学习如何在Unity中编写Unity Shader
@@ -476,7 +476,7 @@ Shader的性能可能会成倍的下降。当然，有时我们不可避免的�
 ③避免不必要的计算。
 
 </br></br></br></br>
-基础光照
+<table><tr><td bgcolor=orange>基础光照</td></tr></table>
 
 计算机图形学的第一定律：如果它看起来是对的，那么他就是对的。
 
@@ -862,3 +862,11 @@ Shader"Unity Shaders Book/Chapter 6/高光反射逐像素Phong方法"
 实际效果图：
 
 ![](https://i.loli.net/2018/06/30/5b374e3eb7ad8.png)
+
+可以看出，的确逐像素进行处理渲染的结果更加圆滑一些。
+
+在这里，我们就不多浪费时间去写Blinn-Phong模型的结果了。这里我们对光照的Shader部分告一段落。
+
+
+
+
