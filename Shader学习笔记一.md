@@ -487,8 +487,9 @@ Shader的性能可能会成倍的下降。当然，有时我们不可避免的�
 标准光照模型使用自发光来计算这个部分的贡献度。他的计算方式和很简单，就是直接使用了该材质的
 自发光颜色：Cmissive=Mmissive
 
-高光反射（Cspecular）：因为书上实际应用部分使用的是Blinn模型，那么我们这里介绍Blinn模型的做法
+高光反射（Cspecular）：
 
+![](https://i.loli.net/2018/06/30/5b3748fe4acda.png)
 ![](https://i.loli.net/2018/06/30/5b3744385702c.png)
 
 漫反射（Cdiffuse）：漫反射光照是对于那些被物体表面随机散射到各个方向的辐射度进行建模的。
@@ -691,6 +692,7 @@ Shader "Unity Shaders Book/Chapter 6/Diffuse Vertex-Level"
 
 四、高光反射
 
+我们根据之前介绍的高光反射计算方法，来尝试逐顶点光照：
 
 
 
