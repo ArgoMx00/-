@@ -694,6 +694,171 @@ Shader "Unity Shaders Book/Chapter 6/Diffuse Vertex-Level"
 
 我们根据之前介绍的高光反射计算方法，来尝试逐顶点光照：
 
+```Shader
+// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
+
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+Shader"Unity Shaders Book/Chapter 6/高光反射"
+{
+	Properties{
+		//再次强调，属性的定义后边不能有分号
+		//定义用户自定义面板修改颜色属性
+		//分别有：光源颜色、材质颜色、材质光泽度。
+		_Diffuse("Diffuse",Color)=(1,1,1,1)
+		_Specular("Specular",Color)=(1,1,1,1)
+		_Gloss("Gloss",Range(8.0,256))=20
+	}
+	SubShader{
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			CGPROGRAM
+
+			//告诉Unity这一部分代码是要在顶点/片元着色器上工作的。
+			#pragma vertex vert
+			#pragma fragment frag
+
+			//为了使用Unity中的内置一些变量，我们还需要包含内置文件Lighting.cginc
+			#include "Lighting.cginc"
+
+			//为了要在这一部分代码块中使用颜色，我们必须重新定义一个新的该属性的东西。
+			fixed4 _Diffuse;
+			fixed4 _Specular;
+			float _Gloss;
+			//接下来我们要实现顶点/片元着色器之间的通信，那么一定要有输入和输出的结构体。
+			struct a2v{
+				float4 vertex : POSITION;
+				float3 normal : NORMAL;
+			};
+
+			struct v2f{
+				float4 pos : SV_POSITION;
+				fixed3 color : COLOR;
+			};
+			//利用那个Phong方法来计算高光反射
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				//得到环境光
+				fixed3 ambient =UNITY_LIGHTMODEL_AMBIENT.xyz;
+
+				fixed3 worldNormal=normalize(mul(v.normal,(float3x3)unity_WorldToObject));
+				fixed3 worldLightDir=normalize(_WorldSpaceLightPos0.xyz);
+				//计算漫反射光
+				fixed3 diffuse=_LightColor0.rgb*_Diffuse.rgb*saturate(dot(worldNormal,worldLightDir));
 
 
+				//实际反射方向
+				fixed3 reflectDir=normalize(reflect(-worldLightDir,worldNormal));
+				//视角方向
+				fixed3 viewDir=normalize(_WorldSpaceCameraPos.xyz-mul(unity_ObjectToWorld,v.vertex).xyz);
+				
+				//计算高光反射光
+				fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(saturate(dot(reflectDir,viewDir)),_Gloss);
+				o.color=ambient+diffuse+specular;
+				return o;
+			}
+			fixed4 frag(v2f i): SV_Target{
+				return fixed4(i.color,1.0);
+			}
+			ENDCG
+		}
+	}
+	Fallback"Diffuse"
+}
+```
 
+在这里，我们增添了几个用户自定义的元素，在逐点计算过程中，我们首先计算出实际反射方向、再得到视角方向再
+按照公式计算即可。这里值得注意的是，我们通过_WorldSpaceCameraPos得到了实际空间中的摄像机位子，再把顶
+点位子从模型空间变换到世界空间下，再通过和_WorldSpaceCameraPos相减即可得到世界空间下的视角方向。
+
+
+实际效果图：
+
+![](https://i.loli.net/2018/06/30/5b374ad4f35bd.png)
+
+接下来，我们将代码进行稍微的修改，将其变成逐像素进行的操作：
+
+```Shader
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+
+// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
+
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+Shader"Unity Shaders Book/Chapter 6/高光反射逐像素Phong方法"
+{
+	Properties{
+		//再次强调，属性的定义后边不能有分号
+		//定义用户自定义面板修改颜色属性
+		//分别有：光源颜色、材质颜色、材质光泽度。
+		_Diffuse("Diffuse",Color)=(1,1,1,1)
+		_Specular("Specular",Color)=(1,1,1,1)
+		_Gloss("Gloss",Range(8.0,256))=20
+	}
+	SubShader{
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			CGPROGRAM
+
+			//告诉Unity这一部分代码是要在顶点/片元着色器上工作的。
+			#pragma vertex vert
+			#pragma fragment frag
+
+			//为了使用Unity中的内置一些变量，我们还需要包含内置文件Lighting.cginc
+			#include "Lighting.cginc"
+
+			//为了要在这一部分代码块中使用颜色，我们必须重新定义一个新的该属性的东西。
+			fixed4 _Diffuse;
+			fixed4 _Specular;
+			float _Gloss;
+			//接下来我们要实现顶点/片元着色器之间的通信，那么一定要有输入和输出的结构体。
+			struct a2v{
+				float4 vertex : POSITION;
+				float3 normal : NORMAL;
+			};
+
+			struct v2f{
+				float4 pos : SV_POSITION;
+				float3 worldNormal : TEXCOORD0;
+				float3 worldPos : TEXCOORD1;	
+			};
+			//利用那个Phong方法来计算高光反射
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=mul(v.normal,(float3x3)unity_WorldToObject);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				return o;
+			}
+			fixed4 frag(v2f i): SV_Target{
+				//得到环境光
+				fixed3 ambient =UNITY_LIGHTMODEL_AMBIENT.xyz;
+
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(_WorldSpaceLightPos0.xyz);
+				//计算漫反射光
+				fixed3 diffuse=_LightColor0.rgb*_Diffuse.rgb*saturate(dot(worldNormal,worldLightDir));
+
+
+				//实际反射方向
+				fixed3 reflectDir=normalize(reflect(-worldLightDir,worldNormal));
+				//视角方向
+				fixed3 viewDir=normalize(_WorldSpaceCameraPos.xyz-i.worldPos.xyz);
+				
+				//计算高光反射光
+				fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(saturate(dot(reflectDir,viewDir)),_Gloss);
+				return fixed4(ambient+diffuse+specular,1.0);
+			}
+			ENDCG
+		}
+	}
+	Fallback"Diffuse"
+}
+```
+
+实际效果图：
+
+![](https://i.loli.net/2018/06/30/5b374e3eb7ad8.png)
