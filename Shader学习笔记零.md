@@ -36,6 +36,49 @@ o.uv=v.texcoord.xy * _MainTex_ST.xy + _MainTex_ST.zw;
 fixed3 worldNormal=normalize();
 ```
 
+6.计算世界空间中的某点（单位）光照法线
+
+```
+worldPos:世界空间中的点
+fixe3 worldLightDir=normalize(UnityWoldSpaceLightDir(worldPos));
+```
+
+7.计算世界空间中的某点（单位）观察向量（矢量）
+
+```
+worldPos:世界空间中的点
+fixed3 viewDir=normalize(UnityWorldSpaceViewDir(worldPos));
+```
+
+8.计算带有2D贴图的点的材质颜色：
+
+```
+_MainTex：2D贴图
+uv:2D贴图的uv坐标
+_Color:我们定义的材质体颜色
+fixed3 albedo=tex2D(_MainTex,uv).rgb*_Color.rgb
+```
+
+9.提取环境光信息：
+
+```
+fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT;
+//如果带有2D贴图，我们计算的时候：
+albedo:带有2D贴图的点的点的材质颜色
+fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
