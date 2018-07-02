@@ -68,7 +68,7 @@ albedo:带有2D贴图的点的点的材质颜色
 fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
 ```
 
-10.得到切线空间中的光线、视角矢量
+10.(凹凸纹理切线空间)得到切线空间中的光线、视角矢量
 
 ```
 //得到模型空间到切线空间的变换矩阵rotation
@@ -78,7 +78,33 @@ o.lightDir=mul(rotation,ObjSpaceLightDir(v.vertex)).xyz;
 o.viewDir=mul(rotation,ObjSpaceViewDir(v.vertex)).xyz;
 ```
 
-11.（凹凸纹理）将切线空间转换到世界空间的转换矩阵：
+11.（凹凸纹理切线空间）求出凹凸纹理法向量并且处理求值问题：
+
+```Shader
+//得到单位切线空间的视角方向和光线方向
+fixed3 tangentLightDir=normalize(i.lightDir);
+fixed3 tangentViewDir=normalize(i.viewDir);
+
+fixed4 packedNormal=tex2D(_BumpMap,i.uv.zw);
+				
+fixed3 tangentNormal;
+tangentNormal=UnpackNormal(packedNormal);
+tangentNormal.xy*=_BumpScale;
+tangentNormal.z=sqrt(1.0-saturate(dot(tangentNormal.xy,tangentNormal.xy)));
+
+
+
+//具有贴图的高光反射、漫反射、环境光的混合。
+fixed3 albedo = tex2D(_MainTex, i.uv).rgb*_Color.rgb;
+fixed3 ambient= UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(tangentNormal,tangentLightDir));
+fixed3 halfDir=normalize(tangentLightDir+tangentViewDir);
+fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(max(0,dot(tangentNormal,halfDir)),_Gloss);
+return fixed4(ambient + diffuse + specular ,1.0);
+```
+
+
+12.（凹凸纹理世界空间）将切线空间转换到世界空间的转换矩阵：
 
 ```Shader
 float3 worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
@@ -90,7 +116,7 @@ o.TtoW1 = float4(worldTangent.y,worldBinormal.y,worldNormal.y,worldPos.y);
 o.TtoW2 = float4(worldTangent.z,worldBinormal.z,worldNormal.z,worldPos.z);
 ```
 
-12.(凹凸纹理) 求出凹凸纹理的法向量并且处理求值问题：
+13.(凹凸纹理世界空间) 求出凹凸纹理的法向量并且处理求值问题：
 
 ```Shader
 				float3 worldPos = float3(i.TtoW0.w, i.TtoW1.w, i.TtoW2.w);
@@ -116,7 +142,7 @@ o.TtoW2 = float4(worldTangent.z,worldBinormal.z,worldNormal.z,worldPos.z);
 				return fixed4(ambient+diffuse+specular,1.0);
 ```
 
-13._LightColor0.rgb =光照颜色。
+14._LightColor0.rgb =光照颜色。
 
 
 
