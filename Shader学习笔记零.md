@@ -144,7 +144,16 @@ o.TtoW2 = float4(worldTangent.z,worldBinormal.z,worldNormal.z,worldPos.z);
 
 14._LightColor0.rgb =光照颜色。
 
+15.遮罩纹理处理方法（改变高光反射值来处理）：
 
+```Shader
+
+//遮罩纹理是改变高光反射值来改变效果的。
+//计算Mask Value
+fixed specularMask=tex2D(_SpecularMask,i.uv).r*_SpecularScale;
+//计算高光反射的值
+fixed3 specular = _LightColor0.rgb* _Specular.rgb*pow(max(0,dot(tangentNormal,halfDir)),_Gloss)*specularMask;
+```
 
 
 
