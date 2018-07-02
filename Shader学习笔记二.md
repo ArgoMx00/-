@@ -132,6 +132,11 @@ o.uv= TRANSFORM_TEX(v.texcoord, _MainTex)
 法线纹理来直接存储表面法线，这种方法又被称为法线映射。尽管我们常常将凹凸映射和
 法线映射当成是相同的技术，但是我们应该知道他们的不同之处。
 
+其实我们凹凸映射的本质就是在逐像素（或者点）的求法线的时候，方式变换了一下，从
+直接求法线变成了对uv贴图等切线方式进行求值。
+
+
+
 在切线空间中，我们实践结果先进行一次记录：
 
 ```Shader
@@ -203,7 +208,7 @@ Shader"Unity Shaders Book/Chapter 7/凹凸纹理"
 				tangentNormal=UnpackNormal(packedNormal);
 				tangentNormal.xy*=_BumpScale;
 				tangentNormal.z=sqrt(1.0-saturate(dot(tangentNormal.xy,tangentNormal.xy)));
-
+   
 
 
 				//具有贴图的高光反射、漫反射、环境光的混合。
@@ -227,6 +232,211 @@ Shader"Unity Shaders Book/Chapter 7/凹凸纹理"
 ![](https://i.loli.net/2018/07/02/5b39db478b476.png)
 
 ![](https://i.loli.net/2018/07/02/5b39dbcc4e86b.png)
+
+接下来 ，我们来实现第二种凹凸纹理设定的方式，即在世界空间下计算光照模型。我们需要在片元着色器中
+把法线方向从切线空间变换到世界空间下。这种方法的基本思想是：在顶点着色器中计算从切线空间到世界
+空间的变换矩阵，并且把它传递给片元着色器。变换矩阵的计算可以由顶点的切线、副切线和法线在世界空间
+下的表示来得到最后，我们只需要在片元着色器中把发现纹理的法线方向从切线空间变换到世界空间下即可。
+尽管这种方法需要更多的计算，但在需要使用CubeMap进行环境映射的情况下，我们就需要使用这种方法。
+
+实践代码：
+
+```Shader
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+
+Shader"Unity Shaders Book/Chapter 7/凹凸纹理世界空间处理"
+{
+	Properties{
+		_Color("Color Tint", Color)=(1,1,1,1)
+		_MainTex("Main Tex",2D)="white"{}
+		_BumpMap("Normal Map",2D)="bump"{}
+		_BumpScale("Bump Scale",Float)=1.0
+		_SpecularScale("Specular",Color)=(1,1,1,1)
+		_Gloss("Gloss",Range(8.0,256))=20
+	}
+	SubShader{
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			CGPROGRAM
+			
+			#pragma vertex vert
+			#pragma fragment frag
+			
+			#include"Lighting.cginc"
+			fixed4 _Color;
+			sampler2D _MainTex;
+			float4 _MainTex_ST;
+			sampler2D _BumpMap;
+			float4 _BumpMap_ST;
+			float _BumpScale;
+			fixed4 _Specular;
+			float _Gloss;
+
+			struct a2v{
+				float4 vertex :POSITION;
+				float3 normal :NORMAL;
+				//顶点的切线,切线是float4的
+				float4 tangent : TANGENT;
+				//2D贴图
+				float4 texcoord :TEXCOORD0;
+			};
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float4 uv:TEXCOORD0;
+				float4 TtoW0: TEXCOORD1;
+				float4 TtoW1: TEXCOORD2;
+				float4 TtoW2: TEXCOORD3;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.uv.xy=v.texcoord.xy*_MainTex_ST.xy+_MainTex_ST.zw;
+				o.uv.zw=v.texcoord.xy*_BumpMap_ST.xy+_BumpMap_ST.zw;
+				
+				//得到切线空间转换到世界空间的转换矩阵：
+
+				float3 worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				fixed3 worldNormal=UnityObjectToWorldNormal(v.normal);
+				fixed3 worldTangent=UnityObjectToWorldDir(v.tangent.xyz);
+				fixed3 worldBinormal=cross(worldNormal,worldTangent)*v.tangent.w;
+				o.TtoW0 = float4(worldTangent.x,worldBinormal.x,worldNormal.x,worldPos.x);
+				o.TtoW1 = float4(worldTangent.y,worldBinormal.y,worldNormal.y,worldPos.y);
+				o.TtoW2 = float4(worldTangent.z,worldBinormal.z,worldNormal.z,worldPos.z);
+				return o;
+			}
+			fixed4 frag(v2f i) :SV_Target{
+				
+				float3 worldPos = float3(i.TtoW0.w, i.TtoW1.w, i.TtoW2.w);
+				//得到这个点的观察向量和光源向量
+				fixed3 lightDir=normalize(UnityWorldSpaceLightDir(worldPos));
+				fixed3 viewDir=normalize(UnityWorldSpaceViewDir(worldPos));
+
+				//求出凹凸纹理的法向量
+				fixed3 bump=UnpackNormal(tex2D(_BumpMap,i.uv.zw));
+				bump.xy*=_BumpScale;
+				bump.z=sqrt(1.0-saturate(dot(bump.xy,bump.xy)));
+				bump=normalize(half3(dot(i.TtoW0.xyz,bump),dot(i.TtoW1.xyz,bump),dot(i.TtoW2,bump)));
+
+
+
+				//具有贴图的高光反射、漫反射、环境光的混合。
+				fixed3 albedo = tex2D(_MainTex, i.uv).rgb*_Color.rgb;
+				fixed3 ambient= UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(bump,lightDir));
+				fixed3 halfDir=normalize(lightDir+viewDir);
+				fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(max(0,dot(bump,halfDir)),_Gloss);
+
+				return fixed4(ambient+diffuse+specular,1.0);
+			}
+			ENDCG
+		}
+	}
+	fallback"Diffuse"
+}
+```
+
+四、渐变纹理
+
+尽管在一开始，我们在渲染使用纹理是为了定义一个五题的颜色，后来人们法线，纹理其实可以用于存储任何表面
+属性。一种常见的用法就是使用渐变纹理来控制漫反射光照的结果。在之前计算漫反射光照的时候，我们都是用
+表面法线和光照方向的点积结果与材质的反射率相乘来得到漫反射的光照。单有的时候，我们需要更加灵活的控制
+光照结果。这种技术在Valve公司提出来的，他们使用这种技术来渲染游戏中具有插画风格的角色。
+
+实践代码：
+
+```
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+
+Shader"Unity Shaders Book/Chapter 7/渐变纹理"
+{
+	Properties{
+		_Color("Color Tint",Color)=(1,1,1,1)
+		_RampTex("Ramp Tex", 2D)="white"{}
+		_Specular("Specular",Color)=(1,1,1,1)
+		_Gloss("Gloss",Range(8.0,256))=20
+	}
+	SubShader{
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag
+
+			#include"Lighting.cginc"
+
+			fixed4 _Color;
+			sampler2D _RampTex;
+			float4 _RampTex_ST;
+			fixed4 _Specular;
+			float _Gloss;
+
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+				float2 uv:TEXCOORD2;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				o.uv=TRANSFORM_TEX(v.texcoord,_RampTex);
+				return o;
+			
+			}
+			fixed4 frag(v2f i):SV_Target{
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.worldPos));
+				fixed3 ambient =UNITY_LIGHTMODEL_AMBIENT.xyz;
+				//计算半兰伯特模型
+				fixed halfLambert = 0.5 *dot(worldNormal,worldLightDir)+0.5;
+				
+				//我们使用半兰伯特模型构建uv坐标。
+				fixed3 diffuseColor = tex2D(_RampTex, fixed2(halfLambert, halfLambert)).rgb * _Color.rgb;
+				//计算漫反射
+				fixed3 diffuse=_LightColor0.rgb*diffuseColor;
+				fixed3 viewDir=normalize(UnityWorldSpaceViewDir(i.worldPos));
+				fixed3 halfDir=normalize(worldLightDir+viewDir);
+				//再计算一个高光反射
+				fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(max(0,dot(worldNormal,halfDir)),_Gloss);
+				return fixed4(ambient+diffuse+specular,1.0);
+				
+			}
+			ENDCG
+		}
+	}
+	Fallback"Diffuse"
+}
+```
+
+实际效果：
+
+![](https://i.loli.net/2018/07/02/5b3a047a59d3d.png)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
