@@ -68,13 +68,55 @@ albedo:带有2D贴图的点的点的材质颜色
 fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
 ```
 
+10.得到切线空间中的光线、视角矢量
+
+```
+//得到模型空间到切线空间的变换矩阵rotation
+TANGENT_SPACE_ROTATION;
+
+o.lightDir=mul(rotation,ObjSpaceLightDir(v.vertex)).xyz;
+o.viewDir=mul(rotation,ObjSpaceViewDir(v.vertex)).xyz;
+```
+
+11.（凹凸纹理）将切线空间转换到世界空间的转换矩阵：
+
+```Shader
+float3 worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+fixed3 worldNormal=UnityObjectToWorldNormal(v.normal);
+fixed3 worldTangent=UnityObjectToWorldDir(v.tangent.xyz);
+fixed3 worldBinormal=cross(worldNormal,worldTangent)*v.tangent.w;
+o.TtoW0 = float4(worldTangent.x,worldBinormal.x,worldNormal.x,worldPos.x);
+o.TtoW1 = float4(worldTangent.y,worldBinormal.y,worldNormal.y,worldPos.y);
+o.TtoW2 = float4(worldTangent.z,worldBinormal.z,worldNormal.z,worldPos.z);
+```
+
+12.(凹凸纹理) 求出凹凸纹理的法向量并且处理求值问题：
+
+```Shader
+				float3 worldPos = float3(i.TtoW0.w, i.TtoW1.w, i.TtoW2.w);
+				//得到这个点的观察向量和光源向量
+				fixed3 lightDir=normalize(UnityWorldSpaceLightDir(worldPos));
+				fixed3 viewDir=normalize(UnityWorldSpaceViewDir(worldPos));
+
+				//求出凹凸纹理的法向量
+				fixed3 bump=UnpackNormal(tex2D(_BumpMap,i.uv.zw));
+				bump.xy*=_BumpScale;
+				bump.z=sqrt(1.0-saturate(dot(bump.xy,bump.xy)));
+				bump=normalize(half3(dot(i.TtoW0.xyz,bump),dot(i.TtoW1.xyz,bump),dot(i.TtoW2,bump)));
 
 
 
+				//具有贴图的高光反射、漫反射、环境光的混合。
+				fixed3 albedo = tex2D(_MainTex, i.uv).rgb*_Color.rgb;
+				fixed3 ambient= UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(bump,lightDir));
+				fixed3 halfDir=normalize(lightDir+viewDir);
+				fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(max(0,dot(bump,halfDir)),_Gloss);
 
+				return fixed4(ambient+diffuse+specular,1.0);
+```
 
-
-
+13._LightColor0.rgb =光照颜色。
 
 
 
