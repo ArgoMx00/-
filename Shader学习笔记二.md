@@ -422,9 +422,137 @@ Shader"Unity Shaders Book/Chapter 7/渐变纹理"
 
 ![](https://i.loli.net/2018/07/02/5b3a047a59d3d.png)
 
+五、遮罩纹理
+
+遮罩纹理，是本章介绍的最后一个纹理，它非常有用，那么什么是遮罩呢？简单来讲，遮罩允许我们可以
+保护一些区域，使得他们免于某些修改，例如，在之前的实现中，我们都是把高光反射应用到模型表面的
+所有地方，即所有的像素都使用同样的大小的高光强度和高光指数，但是有的时候 ，我们希望模型表面
+某些区域的反光强度大一些，有一些地方弱一些，为了得到更加细腻的结果，我们就可以使用一张遮罩
+纹理来控制光照。表现裸露土地等纹理。
+
+使用遮罩纹理的流程一般是：通过采样得到遮罩纹理的纹素值，然后使用其中某个通道的值，来与某种表面
+属性进行相乘，这样，当该通道值为0的时候，可以保护表面不受该属性的影响。总而言之，使用遮罩纹理
+可以让美术人员更加精准地控制模型表面的各种性质。
+
+实践代码：
+
+```Shader
+Shader"Unity Shaders Book/Chapter 7/遮罩纹理"
+{
+	Properties{
+		//光照颜色
+		_Color("Color Tint",Color)=(1,1,1,1)
+		//2D 贴图
+		_MainTex("Main Tex",2D)="white"{}
+		//Normal Map贴图
+		_BumpMap("Normal Map",2D)="bump"{}
+		//凹凸纹理属性值
+		_BumpScale("Bump Scale",Float)=1.0
+		//遮罩处理
+		_SpecularMask("Specular Mask",2D)="white"{}
+		//遮罩影响度的系数
+		_SpecularScale("Specular Scale",Float)=1.0
+		//高光反射颜色
+		_Specular("Specular",Color)=(1,1,1,1)
+		//高光反射系数值
+		_Gloss("Gloss",Range(8.0,256))=20
+	}
+	SubShader{
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag
+
+			#include"Lighting.cginc"
+
+			//主纹理_MainTex，法线纹理_BumpMap和遮罩纹理_SpecularMask
+			//在这里，三个纹理贴图的属性值都由_MainTex_ST来控制
+			fixed4 _Color;
+			sampler2D _MainTex;
+			float4 _MainTex_ST;
+			sampler2D _BumpMap;
+			float _BumpScale;
+			sampler2D _SpecularMask;
+			float _SpecularScale;
+			float4 _Specular;
+			float _Gloss;
+
+			struct a2v{ 
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 tangent:TANGENT;
+				float4 texcoord:TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float2 uv:TEXCOORD0;
+				float3 lightDir:TEXCOORD1;
+				float3 viewDir:TEXCOORD2;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+
+				//使用切线空间来求法向量的变化，造成凹凸效果。
+				TANGENT_SPACE_ROTATION;
+
+				o.lightDir=mul(rotation,ObjSpaceLightDir(v.vertex)).xyz;
+				o.viewDir=mul(rotation,ObjSpaceViewDir(v.vertex)).xyz;
+
+				return o;
+			}
+
+			fixed4 frag (v2f i) :SV_Target{
+				//得到切线空间下的单位矢量
+				fixed3 tangentLightDir=normalize(i.lightDir);
+				fixed3 tangentViewDir=normalize(i.viewDir);
+				
+				//计算逐像素的法线
+				fixed3 tangentNormal;
+				tangentNormal=UnpackNormal(tex2D(_BumpMap,i.uv));
+				tangentNormal.xy*=_BumpScale;
+				tangentNormal.z=sqrt(1.0-saturate(dot(tangentNormal.xy,tangentNormal.xy)));
+
+				//计算漫反射、高光反射、环境光的总值
+				fixed3 albedo=tex2D(_MainTex,i.uv).rgb*_Color.rgb;
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(tangentNormal,tangentLightDir));
+				fixed3 halfDir=normalize(tangentLightDir+tangentViewDir);
+				
+				//遮罩纹理是改变高光反射值来改变效果的。
+				//计算Mask Value
+				fixed specularMask=tex2D(_SpecularMask,i.uv).r*_SpecularScale;
+
+				fixed3 specular = _LightColor0.rgb* _Specular.rgb*pow(max(0,dot(tangentNormal,halfDir)),_Gloss)*specularMask;
+
+				return fixed4(ambient +diffuse +specular ,1.0);
+
+			}
 
 
 
+			ENDCG
+		}
+	}
+}
+```
+
+实践效果：
+
+![](https://i.loli.net/2018/07/02/5b3a140847575.png)
+
+总结：
+
+对于纹理效果的总结，学习了单张纹理的处理方式、学会了凹凸纹理的效果（虽然在直接做的时候渲染效果不明显（没有了光照
+的明亮感）），但是在之后的遮罩纹理处理方法中，很好的解决了这个问题，该暗的地方就是暗的、该亮的地方就是亮的。
+同时了解了什么是渐变纹理。之后有时间更加深入的回来探究一下数学部分的内容。
+那么这一部分纹理的学习就到此结束了。
 
 
 
