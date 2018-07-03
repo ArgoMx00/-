@@ -737,13 +737,235 @@ Shader"Unity Shaders Book/Chapter 8 /透明度测试Alpha Test"
 
 ![](https://i.loli.net/2018/07/03/5b3b14b96e90b.png)
 
+由测试结果可以看出，透明测试得到的透明效果很“极端”---要么完全透明，要么完全不透明。
+它的效果往往像在一个不透明物体上挖了一个空洞，而且，得到的透明效果在边缘往往参差不齐
+有锯齿，这是因为在边界纹理的透明度变化的精度问题，为了得到更加柔滑的透明效果，就可以
+使用透明度混合。
+
+四、透明度混合(关闭深度写入)
+
+透明度混合的实现要比透明度测试稍微复杂一些，这是因为我们在处理透明度测试的时候，实际上
+跟对待普通的不透明物体几乎是一样的，只是在片元着色器中增加了对透明度判断并且裁剪片元的
+代码。而想要实现透明度混合就没有那么简单了。
+
+首先我们回顾一下透明度混合是什么：这种方法可以得到真正的半透明效果。他会使用当前片元的
+透明度作为混合因子，与已经存储在颜色缓冲区中的颜色值进行混合，得到新的颜色。但是，透明
+度混合需要关闭深度写入，这使得我们要非常小心物体的渲染顺序。
+
+为了进行混合，我们需要使用Unity提供的混合命令：Blend，Blend是Unity提供的设置混合模式的指令。
+想要实现半透明的效果就需要把当前自身的颜色和已经存在于颜色缓冲中的颜色值进行混合。混合时
+使用的函数就是由该指令决定的。下标表给出了Blend命令的语义：
+
+![](https://i.loli.net/2018/07/03/5b3b16807a726.png)
+
+Blend SrcFactor DstFactor：开启混合，并且设置混合因子。源颜色（该片元产生的颜色）会乘以SrcFacotr
+而目标颜色（已经存在于颜色缓存中的颜色）会乘以DstFacotr ，然后把两种颜色混合后再加入颜色缓冲中。
+
+在本节中的实例，我们会使用第二种语义，即Blend SrcFactor DstFactor来进行混合，需要注意的是
+这个命令在设置混合因子的同时也开启了混合模式。我们会把源颜色的混合因子SrcFactor设定为SrcAlpha
+而目标颜色的混合因子DstFactor定义为OneMinusScrAlpha。
+
+那么，经过混合后的新的颜色是：DstColor（New）=SrcAlpha * SrcColor+ （1-SrcAlpha）*DstColor（Old）；
+
+了解了大概的实现原理，接下来我们依旧进行实践：
+
+写了一遍代码之后，值得注意的点就是要写好标签，关闭深度写入，并且开启透明度混合，设置两个参数值。
+
+代码如下：
+
+```
+Shader"Unity Shaders Book/Chapter 8/透明度混合"
+{
+	Properties{
+		_Color("Main Tint",Color)=(1,1,1,1)
+		_MainTex("Main Tex",2D)="white"{}
+		//控制整体的透明度
+		_AlphaScale("Alpha Scale", Range(0,1))=1
+	}
+	SubShader{
+		//第一个标签使用透明度混合的渲染队列是名为Transparent的队列，之前在学习过程中也
+		//知道，Unity预定义了五个渲染队列
+		//第二个标签是表示，我们忽略了投影器的影响，不会受到投影器的影响。
+		//最后一个标签RenderType通常被用于着色器替换功能。
+		Tags{"Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent"}
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			//透明度混合我们需要关闭深度写入
+			ZWrite Off
+			//然后设定Blend命令，当前就是说以
+			//DstColor（New）=SrcAlpha * SrcColor+ （1-SrcAlpha）*DstColor（Old）；
+			//的计算方式进行颜色混合。
+			Blend SrcAlpha OneMinusSrcAlpha
+
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag 
+			#include"Lighting.cginc"
+
+			fixed4 _Color;
+			sampler2D _MainTex;
+			fixed4 _MainTex_ST;
+			fixed _AlphaScale;
 
 
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+				float2 uv:TEXCOORD2;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+				return o;
+			}
+
+			fixed4 frag(v2f i): SV_Target{
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.worldPos));
+				fixed4 texColor=tex2D(_MainTex,i.uv);
+				fixed3 albedo=texColor.rgb*_Color.rgb;
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(worldNormal,worldLightDir));
+				//实现半透明，使用贴图的透明度*我们实际的透明度控制数值
+				return fixed4(ambient+diffuse,texColor.a*_AlphaScale);
+
+			}
+
+			ENDCG
+		}
+	}
+	Fallback"Diffuse"
+}
+
+```
+
+实现过程就是，将得到的新的tex2D纹素值，是混合之后的值。改变透明度直接在片元着色器最后的部分，返回一个乘积值
+作为透明度即可。
+
+实践效果：
+
+![](https://i.loli.net/2018/07/03/5b3b2869685ec.png)
+
+五、开启深度写入的半透明效果
+
+在书上8.4节的最后，我们给出了一种由于关闭深度写入而造成的错误排序的情况，如下图：
+
+![](https://i.loli.net/2018/07/03/5b3b29318ddda.png)
+
+一种解决的方法就是使用两个Pass来渲染模型，第一个Pass开启深度写入,但是不进行着色渲染（就是不
+输出颜色），它的目的仅仅是为了把该模型的深度值写入深度缓冲中，第二个Pass进行正常的透明度混合
+由于上一个Pass已经得到了逐像素的正确深度信息，该Pass就可以按照像素级别的深度排序结果进行透明度
+渲染，。但是这种方法的缺点在于，多使用一个Pass会对性能造成一定的影响，但是不影响我们改变屏幕效果
+
+接下来我们依旧进行一波实践操作（代码如下）：
+
+```Shader
+Shader"Unity Shaders Book/Chapter 8/使用两个Pass来实现半透明效果"
+{
+	Properties{
+		_Color("Main Tint",Color)=(1,1,1,1)
+		_MainTex("Main Tex",2D)="white"{}
+		//控制整体的透明度
+		_AlphaScale("Alpha Scale", Range(0,1))=1
+	}
+	SubShader{
+		//第一个标签使用透明度混合的渲染队列是名为Transparent的队列，之前在学习过程中也
+		//知道，Unity预定义了五个渲染队列
+		//第二个标签是表示，我们忽略了投影器的影响，不会受到投影器的影响。
+		//最后一个标签RenderType通常被用于着色器替换功能。
+		Tags{"Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent"}
+		Pass{
+			//这个Pass的作用就是开启深度写入，得到每个像素真正的深度值之后
+			//在下一个Pass中，修正排序不正确的问题
+			ZWrite On
+			//ColorMask用户设置颜色通道的写掩码（write mask）。他的语义如下：
+			//Color Mask RGB|A|0|其他任何R、G、B、A的组合。
+			//当Color Mask 设置为0的时候，意味着该Pass不写入任何颜色通道，即
+			//不会输出任何颜色。这正是我们需要的---该Pass只需要写入深度缓存即可。
+			ColorMask 0
+		}
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			//透明度混合我们需要关闭深度写入
+			ZWrite Off
+			//然后设定Blend命令，当前就是说以
+			//DstColor（New）=SrcAlpha * SrcColor+ （1-SrcAlpha）*DstColor（Old）；
+			//的计算方式进行颜色混合。
+			Blend SrcAlpha OneMinusSrcAlpha
+
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag 
+			#include"Lighting.cginc"
+
+			fixed4 _Color;
+			sampler2D _MainTex;
+			fixed4 _MainTex_ST;
+			fixed _AlphaScale;
 
 
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
 
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+				float2 uv:TEXCOORD2;
+			};
 
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+				return o;
+			}
 
+			fixed4 frag(v2f i): SV_Target{
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.worldPos));
+				fixed4 texColor=tex2D(_MainTex,i.uv);
+				fixed3 albedo=texColor.rgb*_Color.rgb;
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(worldNormal,worldLightDir));
+				//实现半透明，使用贴图的透明度*我们实际的透明度控制数值
+				return fixed4(ambient+diffuse,texColor.a*_AlphaScale);
+
+			}
+
+			ENDCG
+		}
+	}
+	Fallback"Diffuse"
+}
+
+```
+
+实践效果对比：
+
+![](https://i.loli.net/2018/07/03/5b3b2c187fe7d.png)
+
+![](https://i.loli.net/2018/07/03/5b3b2c3925182.png)
+
+上边那张效果图是只实现了透明度混合的效果图，下边的效果图就是用了两个Pass得到的效果图。
 
 
 
