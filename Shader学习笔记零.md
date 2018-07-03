@@ -119,27 +119,27 @@ o.TtoW2 = float4(worldTangent.z,worldBinormal.z,worldNormal.z,worldPos.z);
 13.(凹凸纹理世界空间) 求出凹凸纹理的法向量并且处理求值问题：
 
 ```Shader
-				float3 worldPos = float3(i.TtoW0.w, i.TtoW1.w, i.TtoW2.w);
-				//得到这个点的观察向量和光源向量
-				fixed3 lightDir=normalize(UnityWorldSpaceLightDir(worldPos));
-				fixed3 viewDir=normalize(UnityWorldSpaceViewDir(worldPos));
+float3 worldPos = float3(i.TtoW0.w, i.TtoW1.w, i.TtoW2.w);
+//得到这个点的观察向量和光源向量
+fixed3 lightDir=normalize(UnityWorldSpaceLightDir(worldPos));
+fixed3 viewDir=normalize(UnityWorldSpaceViewDir(worldPos));
 
-				//求出凹凸纹理的法向量
-				fixed3 bump=UnpackNormal(tex2D(_BumpMap,i.uv.zw));
-				bump.xy*=_BumpScale;
-				bump.z=sqrt(1.0-saturate(dot(bump.xy,bump.xy)));
+//求出凹凸纹理的法向量
+fixed3 bump=UnpackNormal(tex2D(_BumpMap,i.uv.zw));
+bump.xy*=_BumpScale;
+bump.z=sqrt(1.0-saturate(dot(bump.xy,bump.xy)));
 				bump=normalize(half3(dot(i.TtoW0.xyz,bump),dot(i.TtoW1.xyz,bump),dot(i.TtoW2,bump)));
 
 
 
-				//具有贴图的高光反射、漫反射、环境光的混合。
-				fixed3 albedo = tex2D(_MainTex, i.uv).rgb*_Color.rgb;
-				fixed3 ambient= UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
-				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(bump,lightDir));
-				fixed3 halfDir=normalize(lightDir+viewDir);
-				fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(max(0,dot(bump,halfDir)),_Gloss);
+//具有贴图的高光反射、漫反射、环境光的混合。
+fixed3 albedo = tex2D(_MainTex, i.uv).rgb*_Color.rgb;
+fixed3 ambient= UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(bump,lightDir));
+fixed3 halfDir=normalize(lightDir+viewDir);
+fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(max(0,dot(bump,halfDir)),_Gloss);
 
-				return fixed4(ambient+diffuse+specular,1.0);
+return fixed4(ambient+diffuse+specular,1.0);
 ```
 
 14._LightColor0.rgb =光照颜色。
@@ -155,9 +155,24 @@ fixed specularMask=tex2D(_SpecularMask,i.uv).r*_SpecularScale;
 fixed3 specular = _LightColor0.rgb* _Specular.rgb*pow(max(0,dot(tangentNormal,halfDir)),_Gloss)*specularMask;
 ```
 
+16.透明度测试标签
 
+![](https://i.loli.net/2018/07/03/5b3b09ac82270.png)
 
+```
+//如果进行透明度测试，将该渲染队列设置为AlphaTest
+//并且将忽略投影器的影响设置为真（1）
+//RenderType标签通常被用于着色器替换功能，标签就是指明该Shader
+//归入到提前定义的组（这里就是TransparentCutout组）中，
+//指明该Shader是一个使用了透明度测试的Shader
+Tags{"Queue"="AlphaTest" "IgnoreProjector"="True" "RenderType"="TransparentCutout"}
+```
 
+17.Tex2D采样得到素纹值（颜色值）
 
+```Shader
+//返回值是一个rgba值
+fixed4 texColor =tex2D(_MainTex,i.uv);
+```
 
 
