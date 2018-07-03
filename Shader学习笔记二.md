@@ -554,6 +554,188 @@ Shader"Unity Shaders Book/Chapter 7/遮罩纹理"
 同时了解了什么是渐变纹理。之后有时间更加深入的回来探究一下数学部分的内容。
 那么这一部分纹理的学习就到此结束了。
 
+<table><tr><td bgcolor=orange>透明效果</td></tr></table>
+
+
+一、了解什么是透明度测试和透明度混合以及透明度渲染顺序
+
+透明是游戏中经常要使用的一种效果。在实时渲染中要实现透明效果，通常会在渲染模型时控制他的透明管道
+当开启透明混合之后，当一个物体被渲染到屏幕上的时候，每个片元除了颜色值和深度值之外，他还有一个另
+一哥属性---透明度。当透明度为1的时候，表示该像素是完全不透明的，而当其为0的时候，就是完全透明的。
+在Unity中，我们通常使用两种方法来实现透明效果：第一种是使用透明度测试，这种方法其实无法得到真正的
+半透明效果，另一种是透明度混合。
+
+深度缓冲是用于解决可见性问题的，它可以决定哪个物体的哪些部分会被渲染在前边，而哪些部分会被其他物体
+遮挡。他的基本思想是:根据深度缓存中的值来判断该片元距离摄像机的距离，当渲染一个片元的时候，需要把
+它的深度值和已经存在于深度缓存中的值进行比较，如果它的值距离摄像机更远，那么说明这个片元不应该被
+渲染到屏幕上；否则，这个片元应该覆盖掉此时颜色缓冲中的像素值，并且把它的深度之更新到缓冲中（默认
+开启了深度写入）。
+
+但是如果想要实现透明的效果，事情就没有那么简单了，那是因为，当使用透明度混合的时候，我们关闭了深度
+写入。简单来说，透明度相关原理基本如下：
+
+①透明度测试：它采用一种“霸道极端”的机制，不需要关闭深度写入，它产生的效果很极端，要么完全透明，看
+不到，要么完全不透明。
+
+②透明度混合：这种方法可以得到真正半透明的效果，它会使用当前片元的透明度作为混合因子，与已经存储
+在颜色缓冲中的颜色值进行混合，得到新的颜色。但是，透明度混合需要关闭深度写入。这使得我们要非常
+小心物体的渲染顺序。需要注意的是，透明度混合只关闭了深度写入，但是没有关闭深度测试，这意味着，当
+使用透明度混合渲染一个片元的时候，还是会比较它的深度之与当前缓冲区中的深度值，如果它的深度值距离
+摄像机更远，那么就不会再进行混合操作，这一点决定了，当一个不透明物体出现在一个透明物体的前边，而
+我们先渲染了不透明物体，它仍然可以正常地遮挡住透明物体。也就是说，对于透明度混合来说，深度缓冲是
+只读的。
+
+那么根据我们对深度写入和相关内容的了解我们知道，如果关闭了深度写入，渲染的顺序就变得尤为重要了。
+
+
+![](https://i.loli.net/2018/07/03/5b3b0849232ac.png)
+![](https://i.loli.net/2018/07/03/5b3b07fc57265.png)
+
+基于书上给出的两个样例来看，渲染引擎一般都会先对物体进行排序再渲染，常用的方法是：
+
+首先我们渲染所有不透明的物体，并且卡其他们的深度测试和深度写入。然后再把不透明的物体按照他们距离
+摄像机的远近进行排序，然后按照从后往前的顺序渲染不透明的物体，并且开启他们的深度测试，但是关闭深度
+写入。
+
+即使我们知道这种方法是足以完成渲染工作和内容的，但是这里存在一个关键的问题：如何排序？我们知道这是
+游戏世界，一个物体和另外一个物体没有相对覆盖的准则，有可能只有一半覆盖上了，但是我们却做以不正确的
+渲染操作了，这种问题解决方法通常是分割网络。如果我们不想分割网络，可以试着让透明通道更加柔和，使
+穿插看起来不是那么明显，我们也可以使用开启了深度写入的半透明效果来近似模拟物体的半透明。
+接下来，我们就学习一下Unity是如何解决排序问题的。
+
+二、Unity Shader的渲染顺序
+
+Unity为了解决渲染顺序的问题，提供了渲染队列（Render Queue）这一个解决方法。我们可以使用
+SubShader中的Queue标签来决定我们的模型将归于哪个渲染队列。Unity在内部使用一系列整数索引
+来表示每个渲染队列，且索引号越小表示越早被渲染。在Unity 5中，Unity提前定义了五个渲染队列，
+当然在每个队列中间我们都可以使用其他队列，那么给出这五个提前定义的渲染队列以及描述：
+
+![](https://i.loli.net/2018/07/03/5b3b09ac82270.png)
+
+因此，如果我们想要通过透明度测试来实现透明效果，代码中应该包含类似下边的代码：
+
+```Shader
+SubShader{
+	Tags{"Queue"="AlphaTest"}
+	Pass{
+		...
+	}
+}
+SubShader{
+	Tags{"Queue"="Transparent"}
+	Pass{
+		ZWrite Off
+		...
+	}
+}
+```
+
+其中的ZWrite Off操作，我们即使进行猜测也能够知道，这是在关闭深度写入。这意味在当前SubShader
+下的所有Pass都会关闭深度写入。
+
+三、透明度测试
+
+透明度测试：只要一个片元的透明度不满足条件，那么它对应的片元就会被舍弃。被舍弃的片元将不会进行
+任何处理，也不会对颜色缓冲产生任何影响，否则，就会按照普通的不透明物体的处理方式来处理他。
+通常，我们会在片元着色器中使用clip函数来进行透明度测试。clip是CG终点额一个函数。对于他的定义如下：
+
+![](https://i.loli.net/2018/07/03/5b3b0b202dac8.png)
+
+接下来，我们要对透明度测试进行一个实践,实践代码如下：
+
+```Shader
+
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+
+Shader"Unity Shaders Book/Chapter 8 /透明度测试Alpha Test"
+{
+	Properties{
+		_Color("Main Tint",Color)=(1,1,1,1)
+		_MainTex("Main Tex",2D)="white"{}
+		//为了在材质面板中控制透明度测试时使用的阈值，我们在属性
+		//中声明定义一个范围在【0，1】之间的属性_Cutoff
+		_Cutoff("Alpha Cutoff",Range(0,1))=0.5
+	}
+	SubShader{
+		//如果进行透明度测试，将该渲染队列设置为AlphaTest
+		//并且将忽略投影器的影响设置为真（1）
+		//RenderType标签通常被用于着色器替换功能，标签就是指明该Shader
+		//归入到提前定义的组（这里就是TransparentCutout组）中，
+		//指明该Shader是一个使用了透明度测试的Shader
+		Tags{"Queue"="AlphaTest" "IgnoreProjector"="True" "RenderType"="TransparentCutout"}
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag 
+			#include"Lighting.cginc"
+
+			fixed4 _Color;
+			sampler2D _MainTex;
+			fixed4 _MainTex_ST;
+			fixed _Cutoff;
+
+
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+				float2 uv:TEXCOORD2;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+				return o;
+			}
+
+			fixed4 frag(v2f i): SV_Target{
+				
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.worldPos));
+
+				//2D纹理采样得到素纹值
+				fixed4 texColor =tex2D(_MainTex,i.uv);
+				//透明度测试Alpha Test
+				//如果当前片元的素纹值小于阈值，那么当前片元就不进行染色渲染
+				//相当于直接抛弃了当前片元
+				clip(texColor.a-_Cutoff);
+				//if(texColor.a-Cutoff<0.0){
+					//discard;
+				//}
+				//计算2D贴图的颜色值：2D贴图素纹值*材质颜色
+				fixed3 albedo=texColor.rgb*_Color.rgb;
+				//计算环境光的值:环境光*贴图颜色值
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				//计算漫反射
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(worldNormal,worldLightDir));
+				return fixed4 (diffuse+ambient,1.0);
+
+			}
+
+			ENDCG
+		}
+	} 
+	Fallback"Transparent/Cutout/VertexLit"
+}
+```
+
+实践效果（随着阈值的变大，我们透明度测试的结果就变得越来越明显。）：
+
+![](https://i.loli.net/2018/07/03/5b3b1485e49cd.png)
+
+![](https://i.loli.net/2018/07/03/5b3b14b96e90b.png)
 
 
 
