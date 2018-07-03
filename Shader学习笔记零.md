@@ -230,7 +230,31 @@ Shader"Unity Shaders Book/Chapter 8/透明度混合"
 		}
 ```
 
+21.一些混合操作的效果：
 
+```Shader
+//正常，即透明度混合
+Blend SrcAlpha oneMinusSrcAlpha
+//柔和相加
+Blend oneMinusDstColor One
+//正片垫底，即相乘
+Blend DstColor Zero
+//两倍相乘
+Blend DstColor SrcColor
+//变暗
+BlendOp Min
+Blend One One
+//变亮
+BlendOp Max
+Blend One One
+//滤色
+Blend OneMinusDstColor One
+//等同于
+Blend One OneMinusSrcColor
+//线性减淡
+Blend One One
+
+```
 
 
 
