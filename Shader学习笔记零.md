@@ -175,4 +175,63 @@ Tags{"Queue"="AlphaTest" "IgnoreProjector"="True" "RenderType"="TransparentCutou
 fixed4 texColor =tex2D(_MainTex,i.uv);
 ```
 
+18.透明度测试：
+
+```Shader
+//透明度测试Alpha Test
+//如果当前片元的素纹值小于阈值，那么当前片元就不进行染色渲染
+//相当于直接抛弃了当前片元
+clip(texColor.a-_Cutoff);
+//if(texColor.a-Cutoff<0.0){
+	//discard;
+//}
+```
+
+19.透明度混合标签和必备格式：
+
+```
+Shader"Unity Shaders Book/Chapter 8/透明度混合"
+{
+	Properties{
+		...
+	}
+	SubShader{
+		//第一个标签使用透明度混合的渲染队列是名为Transparent的队列，之前在学习过程中也
+		//知道，Unity预定义了五个渲染队列
+		//第二个标签是表示，我们忽略了投影器的影响，不会受到投影器的影响。
+		//最后一个标签RenderType通常被用于着色器替换功能。
+		Tags{"Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent"}
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			//透明度混合我们需要关闭深度写入
+			ZWrite Off
+			//然后设定Blend命令，当前就是说以
+			//DstColor（New）=SrcAlpha * SrcColor+ （1-SrcAlpha）*DstColor（Old）；
+			//的计算方式进行颜色混合。
+			Blend SrcAlpha OneMinusSrcAlpha
+		}
+	}
+}
+```
+
+20.设定一个Pass只用来深度读入。并不输出颜色：
+
+```Shader
+
+		Pass{
+			//这个Pass的作用就是开启深度写入，得到每个像素真正的深度值之后
+			//在下一个Pass中，修正排序不正确的问题
+			ZWrite On
+			//ColorMask用户设置颜色通道的写掩码（write mask）。他的语义如下：
+			//Color Mask RGB|A|0|其他任何R、G、B、A的组合。
+			//当Color Mask 设置为0的时候，意味着该Pass不写入任何颜色通道，即
+			//不会输出任何颜色。这正是我们需要的---该Pass只需要写入深度缓存即可。
+			ColorMask 0
+		}
+```
+
+
+
+
+
 
