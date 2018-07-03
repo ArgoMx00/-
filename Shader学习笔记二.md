@@ -967,10 +967,357 @@ Shader"Unity Shaders Book/Chapter 8/使用两个Pass来实现半透明效果"
 
 上边那张效果图是只实现了透明度混合的效果图，下边的效果图就是用了两个Pass得到的效果图。
 
+六、ShaderLab的混合指令
+
+在之前的学习中，我们已经看到如何利用Blend命令进行混合颜色。实际上，混合还有其他用处，不仅仅是用于透明度的混合
+在本节中。我们将更加详细地了解混合中的细节问题。
+
+我们首先来看一下混合是如何实现的。当片元着色器产生一个颜色的时候，可以选择与颜色缓存中的颜色进行混合。
+这样一来，混合就和两个操作数有关：源颜色和目标颜色。源原色用S表示，指的是片元着色器产生的颜色值。
+目标颜色，我们用D来表示，指的是从颜色缓冲中读到的颜色值，当我们谈及混合中的源颜色、目标颜色和输出颜色
+的时候，他们都包含了RGBA四个通道的值，而并非仅仅RGB通道。
+
+想要使用混合，我们必须首先开启他，在Unity中，当我们使用Blend（Blend Off命令除外）命令的时候，除了设置
+混合状态外也开启了混合。但是，在其他图形API中我们是需要手动开启的。
+
+在之前的学习中我们了解过，混合是一个逐片元的操作，而且它是不可编程的，但却是高度可配置的。
+
+现在，我们已经知道两个操作数：S,D，想要得到输出颜色O就必须要使用一个等式来计算，我们把这个等式称为混合
+等式。当进行混合的时候，我们需要使用两个混合等式：一个用于混合RGB通道，一个用于混合A通道。当设置混合状态的
+时候，我们实际上设置的就是混合等式中的操作和因子。在默认情况下，混合等式使用的操作都是加法操作、我们只需要
+设置一下混合因子即可，，由于需要两个等式，每个等式有两个因子，因此就一共需要四个因子，下表给出了ShaderLab
+中设置混合因子的命令。
+
+![](https://i.loli.net/2018/07/03/5b3b3201c100d.png)
+
+可以发现，第一个命令只提供了两个因子，这意味着将使用同样的混合因子来混合RGB通道和A通道，即此时SrcFactorA
+将等同于SrcFactor，DstFactor将等同于DstFactor。下边就是使用这些因子所混合使用的公式：
+
+![](https://i.loli.net/2018/07/03/5b3b3267400c7.png)
+
+我们之前的代码填入的因子的方法也很简单：
+
+```Shader
+Blend SrcAlpha OneMinusSrcAlpha
+//Blend 因子A 因子B
+```
+
+这里混合因子的参数对应的描述有一个大表来对应：
+
+![](https://i.loli.net/2018/07/03/5b3b332d6a6c4.png)
+
+对于Blend默认的混合操作做法是加法，那么肯定混合操作是多种多样的啊。所以我们了解一下什么是Blend混合操作：
+
+在上边涉及的混合等式中，当把源颜色和目标颜色与他们对应的混合因子相乘后，我们都是把他们的结果加起来作为
+输出颜色。那么我们要是想要不用默认的加法去混合怎么办呢？我们可以使用ShaderLab的BlendOp BlendOperation
+命令，下表给出ShaderLab中支持的混合操作：
+
+![](https://i.loli.net/2018/07/03/5b3b34b688142.png)
+
+混合操作命令通常是与混合因子命令一起工作的。但需要注意的是，当使用Min或者Max混合操作的时候，混合
+因子通常实际上是不起任何作用的，他们只会判断原始的颜色和目标颜色之间的比较结果。
+
+通过混合操作和混合因子命令的组合，我们可以得到一些类似PhotoShop混合模式中的混合效果：
+
+```Shader
+//正常，即透明度混合
+Blend SrcAlpha oneMinusSrcAlpha
+//柔和相加
+Blend oneMinusDstColor One
+//正片垫底，即相乘
+Blend DstColor Zero
+//两倍相乘
+Blend DstColor SrcColor
+//变暗
+BlendOp Min
+Blend One One
+//变亮
+BlendOp Max
+Blend One One
+//滤色
+Blend OneMinusDstColor One
+//等同于
+Blend One OneMinusSrcColor
+//线性减淡
+Blend One One
+
+```
+
+上述几种常见效果图：
+
+![](https://i.loli.net/2018/07/03/5b3b36215e339.png)
+
+七、双面渲染的透明效果
+
+默认情况下渲染引擎剔除了物体背面的渲染效果，所以我们之前的透明度测试的实践都只能像是只有半个物体一样去
+渲染的，只渲染了物体的正面，如果我们想要得到双面渲染的效果，那么可以使用Cull指令来控制需要剔除哪个面的
+渲染图元。在Unity中，Cull指令的语法如下：
+
+```Shader
+//如果设置为Back，那么那些背对着摄像机的渲染图元就不会被渲染，这也是默认情况下的剔除状态，如果设置为
+//Front，那么面朝摄像机的渲染图元就不会被渲染，如果设置为Off，就会关闭剔除功能，那么所有的渲染图元都
+//会被渲染，但由于这时需要渲染的图元数目会成倍增加，因此除非是用于特殊效果，通常情况是不会关闭剔除功能的
+Cull Back|Front|Off
+
+```
+
+那么我们接下来开始进行实践、代码基本上是重新利用了一次，首先我们实现以下透明度测试的双面渲染：
+
+```Shader
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+
+Shader"Unity Shaders Book/Chapter 8/透明度测试双面渲染"
+{
+	Properties{
+		_Color("Main Tint",Color)=(1,1,1,1)
+		_MainTex("Main Tex",2D)="white"{}
+		//为了在材质面板中控制透明度测试时使用的阈值，我们在属性
+		//中声明定义一个范围在【0，1】之间的属性_Cutoff
+		_Cutoff("Alpha Cutoff",Range(0,1))=0.5
+	}
+	SubShader{
+		//如果进行透明度测试，将该渲染队列设置为AlphaTest
+		//并且将忽略投影器的影响设置为真（1）
+		//RenderType标签通常被用于着色器替换功能，标签就是指明该Shader
+		//归入到提前定义的组（这里就是TransparentCutout组）中，
+		//指明该Shader是一个使用了透明度测试的Shader
+		Tags{"Queue"="AlphaTest" "IgnoreProjector"="True" "RenderType"="TransparentCutout"}
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			Cull Off
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag 
+			#include"Lighting.cginc"
+
+			fixed4 _Color;
+			sampler2D _MainTex;
+			fixed4 _MainTex_ST;
+			fixed _Cutoff;
 
 
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+				float2 uv:TEXCOORD2;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+				return o;
+			}
+
+			fixed4 frag(v2f i): SV_Target{
+				
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.worldPos));
+
+				//2D纹理采样得到素纹值
+				fixed4 texColor =tex2D(_MainTex,i.uv);
+				//透明度测试Alpha Test
+				//如果当前片元的素纹值小于阈值，那么当前片元就不进行染色渲染
+				//相当于直接抛弃了当前片元
+				clip(texColor.a-_Cutoff);
+				//if(texColor.a-Cutoff<0.0){
+					//discard;
+				//}
+				//计算2D贴图的颜色值：2D贴图素纹值*材质颜色
+				fixed3 albedo=texColor.rgb*_Color.rgb;
+				//计算环境光的值:环境光*贴图颜色值
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				//计算漫反射
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(worldNormal,worldLightDir));
+				return fixed4 (diffuse+ambient,1.0);
+
+			}
+
+			ENDCG
+		}
+	} 
+	Fallback"Transparent/Cutout/VertexLit"
+}
+```
+
+效果对比(第一张图是之前学习的透明度测试，第二张图是双面渲染的透明度测试结果)：
+
+（虽然对面的效果图不是特别好，需要重新计算光线法线之类的映射效果，但是我们这里为了表现出来这是双面渲染，这里就先不进行拓展
+学习尝试了）
+![](https://i.loli.net/2018/07/03/5b3b387d494da.png)
+
+![](https://i.loli.net/2018/07/03/5b3b386d237fa.png)
+
+明显更加真实了。
+
+最后我们再实现以下透明度混合的双面渲染：
+
+还是那个要强调的问题，由于我们之后要关闭深度写入，所以排序的顺序就很重要，我们要小心的控制渲染
+顺序来得到正确的深度关系。如果我们仍然采用之前的做法，直接Cull Off就关闭了剔除功能的话，那么我
+门就无法保证同一个物体的正面和背面图元的渲染顺序，就有可能得到错误的半透明效果。
+
+为此 ，我们选择使用两个Pass来进行工作：第一个Pass只渲染背面，第二个Pass只渲染正面
+这样由于Unity会按照Pass的先后顺序渲染，那么我们就保证了这个半透明的物体的背面永远是先被渲染并且
+先一步渲染的，从而可以保证正确的先后顺序。
+
+那么我们得到一个很简单的实践代码：
+
+```Shader
+Shader"Unity Shaders Book/Chapter 8/使用两个Pass双面渲染"
+{
+	Properties{
+		_Color("Main Tint",Color)=(1,1,1,1)
+		_MainTex("Main Tex",2D)="white"{}
+		//控制整体的透明度
+		_AlphaScale("Alpha Scale", Range(0,1))=1
+	}
+	SubShader{
+		//第一个标签使用透明度混合的渲染队列是名为Transparent的队列，之前在学习过程中也
+		//知道，Unity预定义了五个渲染队列
+		//第二个标签是表示，我们忽略了投影器的影响，不会受到投影器的影响。
+		//最后一个标签RenderType通常被用于着色器替换功能。
+		Tags{"Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent"}
+		Pass{
+			Cull Front
+			//透明度混合我们需要关闭深度写入
+			ZWrite Off
+			//然后设定Blend命令，当前就是说以
+			//DstColor（New）=SrcAlpha * SrcColor+ （1-SrcAlpha）*DstColor（Old）；
+			//的计算方式进行颜色混合。
+			Blend SrcAlpha OneMinusSrcAlpha
+
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag 
+			#include"Lighting.cginc"
+
+			fixed4 _Color;
+			sampler2D _MainTex;
+			fixed4 _MainTex_ST;
+			fixed _AlphaScale;
 
 
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+				float2 uv:TEXCOORD2;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+				return o;
+			}
+
+			fixed4 frag(v2f i): SV_Target{
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.worldPos));
+				fixed4 texColor=tex2D(_MainTex,i.uv);
+				fixed3 albedo=texColor.rgb*_Color.rgb;
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(worldNormal,worldLightDir));
+				//实现半透明，使用贴图的透明度*我们实际的透明度控制数值
+				return fixed4(ambient+diffuse,texColor.a*_AlphaScale);
+
+			}
+
+			ENDCG
+		}
+		Pass{
+			Cull Back
+			//透明度混合我们需要关闭深度写入
+			ZWrite Off
+			//然后设定Blend命令，当前就是说以
+			//DstColor（New）=SrcAlpha * SrcColor+ （1-SrcAlpha）*DstColor（Old）；
+			//的计算方式进行颜色混合。
+			Blend SrcAlpha OneMinusSrcAlpha
+
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag 
+			#include"Lighting.cginc"
+
+			fixed4 _Color;
+			sampler2D _MainTex;
+			fixed4 _MainTex_ST;
+			fixed _AlphaScale;
+
+
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+				float2 uv:TEXCOORD2;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+				return o;
+			}
+
+			fixed4 frag(v2f i): SV_Target{
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.worldPos));
+				fixed4 texColor=tex2D(_MainTex,i.uv);
+				fixed3 albedo=texColor.rgb*_Color.rgb;
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(worldNormal,worldLightDir));
+				//实现半透明，使用贴图的透明度*我们实际的透明度控制数值
+				return fixed4(ambient+diffuse,texColor.a*_AlphaScale);
+
+			}
+
+			ENDCG
+		}
+	}
+	Fallback"Diffuse"
+}
+```
+
+实践效果图：
+
+![](https://i.loli.net/2018/07/03/5b3b3d539a05f.png)
+
+总结：
+
+我们在这一部分中，学习了如何使用一些透明度的东西，以及学会了一些Blend命令、Cull剔除命令，混合命令等。
+
+加强了基础的学习，自己也感觉算是半只脚迈进了Shader的大门。。
+
+之后的学习会再另开一个文档继续记录。
+这一部分的学习就先告一段落了。
 
 
 
