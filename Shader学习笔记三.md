@@ -451,6 +451,12 @@ Unity5中，Unity使用了不同于这种传统技术的阴影采样技术，即
 
 注意，一定要给光加上阴影效果才行。。
 
+如果我们使用了上一节中使用的代码，因为有一个FallBack的Specular。所以默认到游戏界面中也还会有
+阴影存在的。因为这是Unity自带的那个Shader中，有一个Pass是LightMode为ShadowCaster的。这里我们
+可以简单来看看这部分：
+
+![](https://i.loli.net/2018/07/04/5b3c9d6555a72.png)
+
 
 
 
