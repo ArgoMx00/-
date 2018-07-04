@@ -277,3 +277,29 @@ Blend One One
 #endif
 
 ```
+
+24.世界坐标下的摄像机位子：_WorldSpaceCameraPos.xyz
+
+25.定义不同光源的衰减值：
+
+```Shader
+#ifdef USING_DIRECTIONAL_LIGHT
+	fixed atten=1.0;
+#else 
+	#if defined(POINT)
+		float3 lightCoord=mul(unity_WorldToLight,float4(i.worldPos,1)).xyz;
+		fixed atten=tex2D(_LightTexture0,dot(lightCoord,lightCoord).rr).UNITY_ATTEN_CHANNEL;
+	#elif defined(SPOT)
+		float4 lightCoord=mul(unity_WorldToLight,float4(i.worldPos,1)).xyz;
+		fixed atten=(lightCoord.z>0)*tex2D(_LightTexture0,lightCoord.xy/lightCoord.w+0.5).w*tex2D(_LightTextureB0,dot(_LightCoord,lightCoord).rr).UNITY_ATTEN_CHANNEL;
+	#else
+		fixed atten=1.0;
+	#endif
+#endif
+return fixed4((diffuse+specular)*atten,1.0); 
+
+```
+
+
+
+
