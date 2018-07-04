@@ -151,15 +151,211 @@ Unity中一共支持4种光源类型：平行光、点光源、聚光灯以及�
 
 三、在前向渲染中处理不同的光源类型
 
-接下来我们进行实践 。
+接下来我们进行实践 ：
+
+我们首先处理第一个Pass-BasePass，对于他来说，它处理的逐像素光照类型一定是平行光。
+那么这部分的代码，我们直接高光反射+漫反射+环境光叠加一下即可。又因为是平行光，所以衰减率我们定义为1（即
+没有衰减）。
+
+然后我们定义第二个Pass-Additional Pass，这部分的渲染路径我们定义为ForwardAdd（用于前向渲染，该Pass会
+计算额外的逐像素光源，每个Pass对应一个光源），对于这部分的Pass，往往要去掉Base Pass中的环境光、自发光、
+逐顶点光照。Additional Pass处理的光源类型可能是任何光源类型，因此在计算光源的五个属性的时候，颜色和
+强度我们仍然可以使用_LightColor0来得到。但对于位子方向和衰减属性，我们就要根据光源的类型进行分门别类
+的计算了。首先，我们来看如何计算不同光源的方向：
+
+```Shader
+#ifdef USING_DIRECTIONAL_LIGHT
+  fixed3 worldLightDir=normalize(_WorldSpaceLightPos0.xyz);
+#else 
+  fixed3 worldLightDir=normalize(_WolrdSpaceLightPos0.xyz-i.worldPosition.xyz);
+#endif
+```
+
+在上边的代码中，我们首先判断了当前处理的逐像素光源的类型，这是通过使用#ifdef指令来判断是否定义了
+USING_DIRECTIONAL_LIGHT来得到的额。如果当前前向渲染Pass处理的光源类型是平行光，那么Unity的底层
+渲染引擎就会定义USING_DIRECTIONAL_LIGHT。如果判断得知是平行光的话，光源方向我们直接由_WorldSpace
+LightPos0.xyz得到。如果判断是点光源或者是聚光灯的话，那么_WorldSpaceLightPos0.xyz表示的是世界下
+的光源位子，而想要得到光源方向的话，我们就需要用这个位子减去世界空间下的顶点位子来得到。
+
+最后，我们还需要处理不同光源的衰减问题：
+
+```Shader
+#ifdef USING_DIRECTIONAL_LIGHT
+  fixed atten=1.0;
+#else 
+  float3 lightCoord=mul(_LightMatrix0,float4(i.worldPosition,1)).xyz;
+  fixed atten=tex2D(_LightTexture0,dot(lightCoord,lightCoord).rr).UNITY_ATTEN_CHANNEL
+#endif
+```
+
+我们同样是通过判断是否定义了USING_DIRECTIONAL_LIGHT来决定当前处理的光源类型。如果是平行光的话
+衰减值为1.0，如果是其他光源类型，那么处理就更加复杂一些。尽管我们可以使用数学表达式来计算顶点相
+对于光源和聚光灯的衰减，但是这些计算往往涉及到各种操作，计算相对较大的操作，所以Unity选择了一张
+纹理作为查找表（Lookup Table，LUT），以在片元着色器中得到光源的衰减。我们首先得到光源空间下的
+坐标，然后使用该坐标对衰减纹理进行采样得到衰减值。关于Unity中衰减纹理的细节会在后序学习中说明。
+本节主要是为了讲解对于不同光源的处理方式，并不能作为真正的光源处理方式进行直接使用，后续学习会
+给出真正的Unity Shader。
+
+走到当前步骤，我们写出了对应的Shader：
+
+```Shader
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
+// Upgrade NOTE: replaced '_LightMatrix0' with 'unity_WorldToLight'
+
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+
+Shader"Unity Shaders Book/Chapter 9/前向渲染的几种光照(Test Not Use for game)"
+{
+	Properties{
+		_Diffuse("Diffuse",Color)=(1,1,1,1)
+		_Specular("Specular",Color)=(1,1,1,1)
+		_Gloss("Gloss",Range(8.0,256))=20
+	}
+	SubShader{
+		//渲染队列的归组
+		Tags{"RenderType"="Opaque"}
+		//这个Pass处理了平行光，如果场景中包含多个平行光，在这个例子中，
+		//Unity会选择最亮的平行光传递给这个Base Pass进行逐像素的处理。
+		//其他平行光会按照逐顶点在Additionl Pass中按照逐像素的处理。
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			CGPROGRAM
+
+			//这个pragma编译指令，可以保证我们在Shader中使用光照衰减等
+			//光照变量可以被正确赋值。这是必不可少的。
+			#pragma multi_compile_fwdbase
+
+			#pragma vertex vert
+			#pragma fragment frag
+
+			#include"Lighting.cginc"
+
+			fixed4 _Diffuse;
+			fixed4 _Specular;
+			float _Gloss;
+
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+			};
+
+			v2f vert(a2v v)
+			{
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				return o;
+			}
+			fixed4 frag(v2f i):SV_Target{
+			
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.pos));
+				
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz;
+				fixed3 diffuse=_LightColor0.rgb*_Diffuse.rgb*max(0,dot(worldNormal,worldLightDir));
+
+				fixed3 viewDir=normalize(_WorldSpaceCameraPos.xyz-i.worldPos.xyz);
+				fixed3 halfDir=normalize(worldLightDir+viewDir);
+				fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(max(0,dot(worldNormal,halfDir)),_Gloss);
+				//由于平行光是没有衰减的，所以我们直接设定衰减值为1.0即可。
+				fixed atten=1.0;
+				return fixed4(ambient+(diffuse+specular)*atten,1.0);
+
+			
+			}
 
 
+			ENDCG
+		}
+		//接下来，我们定义一个Additional Pass
+		Pass{
+			//设置渲染路径
+			Tags{"LightMode"="ForwardAdd"}
+			//在这里，我们还开启了混合模式。这是因为，我们希望这部分Pass
+			//计算得到的光照结果可以在帧缓存中叠加效果。
+			Blend One One
+			CGPROGRAM
+			//给出这个指令，能够保证我们在当前Pass中访问到正确的光照变量
+			#pragma multi_compile_fwdadd
+			
+			#pragma vertex vert 
+			#pragma fragment frag
+			#include"Lighting.cginc"
+			#include"AutoLight.cginc"
+
+			fixed4 _Diffuse;
+			fixed4 _Specular;
+			float _Gloss;
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+			};
+			v2f vert(a2v v)
+			{
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				return o;
+			}
+
+			fixed4 frag(v2f i):SV_Target{
+				fixed3 worldNormal=normalize(i.worldNormal);
+				//判断光源是否定义了USING_DIRECTIONAL_LIGHT，如果定义了，那么说明该光源类型是品星光
+				//否则就是点光源或者是聚光灯，两种光的求光源方向的方式不同，所以要进行区别。
+				#ifdef USING_DIRECTIONAL_LIGHT
+					fixed3 worldLightDir=normalize(_WorldSpaceLightPos0.xyz);
+				#else 
+					fixed3 worldLightDir=normalize(_WorldSpaceLightPos0.xyz-i.worldPos.xyz);
+				#endif
+
+				fixed3 diffuse=_LightColor0.rgb*_Diffuse.rgb*max(0,dot(worldNormal,worldLightDir));
+				fixed3 viewDir=normalize(_WorldSpaceCameraPos.xyz-i.worldPos.xyz);
+				fixed3 halfDir=normalize(viewDir+worldLightDir);				
+				fixed3 specular=_LightColor0.rgb*_Specular.rgb*pow(max(0,dot(worldNormal,halfDir)),_Gloss);
+
+				#ifdef USING_DIRECTIONAL_LIGHT
+					fixed atten=1.0;
+				#else 
+					#if defined(POINT)
+						float3 lightCoord=mul(unity_WorldToLight,float4(i.worldPos,1)).xyz;
+						fixed atten=tex2D(_LightTexture0,dot(lightCoord,lightCoord).rr).UNITY_ATTEN_CHANNEL;
+					#elif defined(SPOT)
+						float4 lightCoord=mul(unity_WorldToLight,float4(i.worldPos,1)).xyz;
+						fixed atten=(lightCoord.z>0)*tex2D(_LightTexture0,lightCoord.xy/lightCoord.w+0.5).w*tex2D(_LightTextureB0,dot(_LightCoord,lightCoord).rr).UNITY_ATTEN_CHANNEL;
+					#else
+						fixed atten=1.0;
+					#endif
+				#endif
+					return fixed4((diffuse+specular)*atten,1.0); 
+			}
+
+			ENDCG
 
 
+		}
+	}
+}
 
+```
 
+多光源的实践效果：
 
-
+![](https://i.loli.net/2018/07/04/5b3c6f1b85834.png)
 
 
 
