@@ -792,10 +792,115 @@ Shader"Unity Shaders Book/Chapter 9/阴影效果"
 
 七、透明度物体的阴影
 
+我们的代码和之前的透明度测试的代码基本一样，只是添加了关于阴影的计算之类的操作 。
+以及回滚的时候，我们为了节省编码量，带有ShadowCaster的Pass，我们在Fallback中
+设定一个合理的Shader即可。我们这里使用了Fallback"Transparent/Cutout/VertexLit"
+
+同时，我们再将Cube中的Cast Shadows设置为Two Sided即可。
+
+实践代码：
+
+```Shader
+// Upgrade NOTE: replaced '_Object2World' with 'unity_ObjectToWorld'
+
+Shader"Unity Shaders Book/Chapter 9/透明度测试Alpha Test加阴影效果"
+{
+	Properties{
+		_Color("Main Tint",Color)=(1,1,1,1)
+		_MainTex("Main Tex",2D)="white"{}
+		//为了在材质面板中控制透明度测试时使用的阈值，我们在属性
+		//中声明定义一个范围在【0，1】之间的属性_Cutoff
+		_Cutoff("Alpha Cutoff",Range(0,1))=0.5
+	}
+	SubShader{
+		//如果进行透明度测试，将该渲染队列设置为AlphaTest
+		//并且将忽略投影器的影响设置为真（1）
+		//RenderType标签通常被用于着色器替换功能，标签就是指明该Shader
+		//归入到提前定义的组（这里就是TransparentCutout组）中，
+		//指明该Shader是一个使用了透明度测试的Shader
+		Tags{"Queue"="AlphaTest" "IgnoreProjector"="True" "RenderType"="TransparentCutout"}
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+
+			CGPROGRAM
+
+			#pragma multi_compile_fwdbase
+
+			#pragma vertex vert
+			#pragma fragment frag 
+			#include"Lighting.cginc"
+			#include"AutoLight.cginc"
+
+			fixed4 _Color;
+			sampler2D _MainTex;
+			fixed4 _MainTex_ST;
+			fixed _Cutoff;
 
 
+			struct a2v{
+				float4 vertex:POSITION;
+				float3 normal:NORMAL;
+				float4 texcoord:TEXCOORD0;
+			};
 
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float3 worldNormal:TEXCOORD0;
+				float3 worldPos:TEXCOORD1;
+				float2 uv:TEXCOORD2;
+				SHADOW_COORDS(3)
+			};
 
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.worldNormal=UnityObjectToWorldNormal(v.normal);
+				o.worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+				TRANSFER_SHADOW(o);
+				return o;
+			}
+
+			fixed4 frag(v2f i): SV_Target{
+				
+				fixed3 worldNormal=normalize(i.worldNormal);
+				fixed3 worldLightDir=normalize(UnityWorldSpaceLightDir(i.worldPos));
+
+				//2D纹理采样得到素纹值
+				fixed4 texColor =tex2D(_MainTex,i.uv);
+				//透明度测试Alpha Test
+				//如果当前片元的素纹值小于阈值，那么当前片元就不进行染色渲染
+				//相当于直接抛弃了当前片元
+				clip(texColor.a-_Cutoff);
+				//if(texColor.a-Cutoff<0.0){
+					//discard;
+				//}
+				//计算2D贴图的颜色值：2D贴图素纹值*材质颜色
+				fixed3 albedo=texColor.rgb*_Color.rgb;
+				//计算环境光的值:环境光*贴图颜色值
+				fixed3 ambient=UNITY_LIGHTMODEL_AMBIENT.xyz*albedo;
+				//计算漫反射
+				fixed3 diffuse=_LightColor0.rgb*albedo*max(0,dot(worldNormal,worldLightDir));
+				UNITY_LIGHT_ATTENUATION(atten,i,i.worldPos);
+				return fixed4 (diffuse*atten+ambient,1.0);
+
+			}
+
+			ENDCG
+		}
+	} 
+	Fallback"Transparent/Cutout/VertexLit"
+}
+```
+
+实践效果：
+
+![](https://i.loli.net/2018/07/04/5b3cbd0c29f36.png)
+
+因为我的任务目标是建造河流，所以今天我们对阴影部分的学习就到这里。在之后的学习中，我们需要对
+光照部分进行一个总结，得到一个Shader真正能够用于光照效果的综合效果。
+
+本章内容不是特别难但是相对较为复杂，当以后应用的时候再回来翻翻记录再做拓展吧。
 
 
 
