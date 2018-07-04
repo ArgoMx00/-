@@ -265,3 +265,15 @@ Blend One One
 #pragma multi_compile_fwdbase
 ```
 
+23.区别光源类型（并且给出了平行光和非平行光的求光线方向的方式）
+
+```Shader
+//判断光源是否定义了USING_DIRECTIONAL_LIGHT，如果定义了，那么说明该光源类型是品星光
+//否则就是点光源或者是聚光灯，两种光的求光源方向的方式不同，所以要进行区别。
+#ifdef USING_DIRECTIONAL_LIGHT
+	fixed3 worldLightDir=normalize(_WorldSpaceLightPos0.xyz);
+#else 
+	fixed3 worldLightDir=normalize(_WorldSpACElIGHTpOS0.xyz-i.worldPos.xyz);
+#endif
+
+```
