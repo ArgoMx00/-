@@ -256,6 +256,12 @@ Blend One One
 
 ```
 
+22.准确得到光照衰减的pragma编译指令
 
+```
 
+//这个pragma编译指令，可以保证我们在Shader中使用光照衰减等
+//光照变量可以被正确赋值。这是必不可少的。
+#pragma multi_compile_fwdbase
+```
 
