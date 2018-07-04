@@ -300,6 +300,16 @@ return fixed4((diffuse+specular)*atten,1.0);
 
 ```
 
+26.将世界空间中的点转换到光源空间中，再利用Unity内部的2D贴图进行计算衰减值：
+
+```Shader
+//得到点在光源空间中的位子
+float3 lightCoord=mul(unity_WorldToLight,float4(i.worldPos,1)).xyz;
+//然后我们可以使用这个坐标的模的平方对衰减纹理进行采样，得到衰减值：
+fixed atten=tex2D(_LightTexture0,dot(lightCoord,lightCoord).rr).UNITY_ATTEN_CHANNEL;
+```
+
+
 
 
 
