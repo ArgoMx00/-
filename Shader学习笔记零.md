@@ -40,7 +40,8 @@ fixed3 worldNormal=normalize();
 
 ```
 worldPos:世界空间中的点
-fixe3 worldLightDir=normalize(UnityWoldSpaceLightDir(worldPos));
+fixed3 worldLightDir=normalize(UnityWoldSpaceLightDir(worldPos));
+fixed3 worldLightDir=normalize(_WorldSpaceLightPos0.xyz);
 ```
 
 7.计算世界空间中的某点（单位）观察向量（矢量）
@@ -300,7 +301,19 @@ return fixed4((diffuse+specular)*atten,1.0);
 
 ```
 
-26.将世界空间中的点转换到光源空间中，再利用Unity内部的2D贴图进行计算衰减值：
+26.定义不同光源的衰减值（简化版）：
+
+```Shader
+//判断是否是平行光来断定衰减值
+#ifdef USING_DIRECTIONAL_LIGHT
+	fixed atten=1.0;
+#else
+	float3 lightCoord=mul(_LightMatrix0,float4(i.worldPos,1)).xyz;
+	fixed atten=tex2D(_LightTexture0,dot(lightCoord,lightCoord).rr).UNITY.ATTEN_CHANNEL;
+#endif
+```
+
+27.将世界空间中的点转换到光源空间中，再利用Unity内部的2D贴图进行计算衰减值：
 
 ```Shader
 //得到点在光源空间中的位子
@@ -309,7 +322,16 @@ float3 lightCoord=mul(unity_WorldToLight,float4(i.worldPos,1)).xyz;
 fixed atten=tex2D(_LightTexture0,dot(lightCoord,lightCoord).rr).UNITY_ATTEN_CHANNEL;
 ```
 
+28.求阴影值三剑客：
 
+SHADOW_COORDS(2):用于定义在顶点着色器输出结构体中
+TRANSFER_SHADOW(O):写在顶点着色器中。
+SHADOW_ATTENUATION（i）：用于求阴影值。
+
+29.求阴影值和衰减值的乘积值：
+```Shader
+UNITY_LIGHT_ATTENUATION(atten,i,i.worldPos);
+```
 
 
 
