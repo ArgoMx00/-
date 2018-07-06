@@ -287,6 +287,83 @@ Shader"Unity Shaders Book/Chapter 10/折射效果"
 
 ![](https://i.loli.net/2018/07/06/5b3f06216bf39.png)
 
+接下来书籍上的菲涅耳反射我们就先不去深入探究了，如有需要，回头参考一下就行了。
+
+三、渲染纹理
+
+在之前的学习中，一个摄像机的渲染结果会输出到颜色缓冲中，并且显示到我们的屏幕上。现代的GPU允许
+我们把整个三维场景渲染到一个中间缓冲中，即渲染目标纹理，而不是传统的缓冲或后备缓冲。与之相关的
+是多重渲染目标，这种奇数指的是GPU允许我们把场景同时渲染到多个渲染目标纹理中，而不再需要为每个
+渲染目标纹理单独渲染完整的场景。延迟渲染就是使用多重渲染目标的一个应用。
+
+Unity为渲染目标纹理定义了一种专门的纹理类型---渲染纹理。在Unity中使用渲染纹理通常有两种方式:
+一种方式是在Project目录下创建一个渲染纹理，然后把这个摄像机的渲染目标设置成渲染纹理，这样一来
+摄像机的渲染结果就会实时更新到渲染纹理中，而不会显示在屏幕上。另一种方式就是在屏幕后处理时使用
+GrabPass命令或者OnRenderImage函数来获取当前屏幕的图像，Unity会把这个屏幕图像放到一张和屏幕
+分辨率等同的渲染纹理中。下边我们就自定义Pass来尝试实现各种屏幕特效。
+
+四、镜子效果
+
+我们的镜面效果是基于渲染纹理去处理的，核心思想就是把一个摄像机放置在镜子上，然后让他观察到的效果
+渲染到物体上去。那么这里我们就需要渲染纹理Texture了。
+
+我们的工作顺序是：
+
+①创建一个Texture，然后把这个Texture赋给一个摄像机，再将这个Texture赋给Shader（Matrial）中。
+然后把这个Shader（Matrial）赋给镜面，最后调整摄像机的观察方向，就能够得到实践效果了。
+不过效果放大之后挺一般的。这里学习一下渲染纹理的一种应用即可，不作过多的拓展了；
+
+②实践代码：
+
+```Shader
+Shader"Unity Shaders Book/Chapter 10/镜面效果"
+{
+	Properties{
+		_MainTex("Main Tex",2D)="white"{}
+	}
+	SubShader{
+		Tags{"RenderType"="Opaque" "Queue"="Geometry"}
+		Pass{
+			CGPROGRAM 
+			
+			#pragma vertex vert
+			#pragma fragment frag
+
+			sampler2D _MainTex;
+
+			struct a2v{
+				float4 vertex : POSITION;
+				float3 texcoord: TEXCOORD0;
+			};
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float2 uv:TEXCOORD0;
+			};
+			
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				//处理uv贴图，一开始原封不动的赋过来。
+				o.uv=v.texcoord;
+				//然后再反转一下x轴，即左右对称一下（因为镜子是左右反对称的。）
+				o.uv.x=1-o.uv.x;
+				return o;
+			}
+			fixed4 frag(v2f i):SV_Target{
+				return tex2D(_MainTex,i.uv);
+			}
+			
+			ENDCG
+		}
+	}
+}
+```
+
+实践效果：
+
+![](https://i.loli.net/2018/07/06/5b3f11f1a4065.png)
+
+
 
 
 
