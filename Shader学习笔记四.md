@@ -509,7 +509,7 @@ Shader"Unity Shaders Book/Chapter 10/玻璃效果"
 				//对其进行偏移，模拟折射效果，_Distortion的值越大，偏移量越大。
 				//玻璃背后的物体看起来形变程度就越大。
 				float2 offset=bump.xy*_Distortion*_RefractionTex_TexelSize.xy;
-
+				//得到折射的颜色
 				fixed3 refrCol=tex2D(_RefractionTex,i.scrPos.xy/i.scrPos.w).rgb;
 
 				
@@ -533,6 +533,181 @@ Shader"Unity Shaders Book/Chapter 10/玻璃效果"
 实践效果：
 
 ![](https://i.loli.net/2018/07/06/5b3f2ca4befeb.png)
+
+五、程序纹理
+
+程序纹理指的是那些由计算机生成的图像，我们通常使用一些特定的算法来创建个性化图案或者非常真实的
+自然元素、例如石头、目头等，使用程序纹理的好处在于我们可以使用各种参数来控制纹理的外观，而这些
+属性不仅仅是哪些颜色属性，我们首先尝试用算法来实现一个非常简单的程序材质，随后，我们会学习一类
+专门使用程序纹理的材质---程序材质。
+
+为了能够在面板上修改数据的同时仍可执行set函数，我们使用了一个开源插件
+
+下载地址：（https://github.com/LMNRY/SetProperty）
+
+使用方法：下载之后直接拖拽到U3d中即可，不需要进行任何操作。
+
+然后我们利用cs脚本画出九个圆出来：
+
+```Shader
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+//为了能让该脚本能够在编辑器模式下运行
+[ExecuteInEditMode]
+public class Shader_Shape : MonoBehaviour
+{
+    public Material material = null;
+    //#region 没有实际的意义，就是为了组织代码用的。
+    #region Material properties
+
+    //为了能够在面板上修改数据的同时仍可执行set函数，我们使用了一个开源插件
+    //下载地址：（https://github.com/LMNRY/SetProperty）
+    //使用方法：下载之后直接拖拽到U3d中即可，不需要进行任何操作。
+
+    //纹理大小
+    [SerializeField, SetProperty("textureWidth")]
+
+    private int m_textureWidth = 512;
+    public int textureWidth
+    {
+        get
+        {
+            return m_textureWidth;
+        }
+        set
+        {
+            m_textureWidth = value;
+            _UpdateMaterial();
+        }
+    }
+    //背景颜色
+    [SerializeField, SetProperty("backgroundColor")]
+    private Color m_backgroundColor = Color.white;
+    public Color backgroundColor
+    {
+        get
+        {
+            return m_backgroundColor;
+        }
+        set
+        {
+            m_backgroundColor = value;
+            _UpdateMaterial();
+        }
+    }
+    //圆点的颜色
+    [SerializeField, SetProperty("circleColor")]
+    private Color m_circleColor = Color.yellow;
+    public Color circleColor
+    {
+        get
+        {
+            return m_circleColor;
+        }
+        set
+        {
+            m_circleColor = value;
+            _UpdateMaterial();
+        }
+    }
+    //模糊因子
+    [SerializeField, SetProperty("blurFactor")]
+    private float m_blurFactor = 2.0f;
+    public float blurFactor
+    {
+        get
+        {
+            return m_blurFactor;
+        }
+        set
+        {
+            m_blurFactor = value;
+            _UpdateMaterial();
+        }
+    }
+    #endregion
+    //为了保存生成的程序纹理，我们声明一个Texture2D类型的纹理变量
+    private Texture2D m_generatedTexture = null;
+
+    private void Start()
+    {
+        //我们首先检查了material变量是否为空，如果为空，就尝试从使用该脚本
+        //所在物体上得到相应的材质。完成后，调用_UpdateMaterial函数来为其生成
+        //程序纹理
+        if (material == null)
+        {
+            Renderer renderer = gameObject.GetComponent<Renderer>();
+            if (renderer == null)
+            {
+                Debug.LogWarning("Can not find a renderer.");
+                return;
+            }
+            material = renderer.sharedMaterial;
+        }
+        _UpdateMaterial();
+    }
+    private void _UpdateMaterial()
+    {
+        //当前材质不为空的时候
+        if (material != null)
+        {
+            //我们调用函数来生成一张程序纹理，并且赋值给m_generatedTexture;
+            m_generatedTexture = _GenerateProceduralTexture();
+            //利用函数将纹理贴给材质。
+            material.SetTexture("_MainTex", m_generatedTexture);
+        }
+    }
+    private Color _MixColor(Color color0, Color color1, float mixFactor)
+    {
+        Color mixColor = Color.white;
+        mixColor.r = Mathf.Lerp(color0.r, color1.r, mixFactor);
+        mixColor.g = Mathf.Lerp(color0.g, color1.g, mixFactor);
+        mixColor.b = Mathf.Lerp(color0.b, color1.b, mixFactor);
+        mixColor.a = Mathf.Lerp(color0.a, color1.a, mixFactor);
+        return mixColor;
+    }
+    private Texture2D _GenerateProceduralTexture()
+    {
+        //首先初始化一张二维纹理
+        Texture2D proceduralTexture=new Texture2D(textureWidth, textureWidth);
+        float circleInterval = textureWidth / 4.0f;
+        float radius = textureWidth / 10.0f;
+        float edgeBlur = 1.0f / blurFactor;
+
+        for(int w=0;w<textureWidth;w++)
+        {
+            for(int h=0;h<textureWidth;h++)
+            {
+                Color pixel = backgroundColor;
+                for(int i=0;i<3;i++)
+                {
+                    for(int j=0;j<3;j++)
+                    {
+                        Vector2 circleCenter = new Vector2(circleInterval * (i + 1), circleInterval * (j + 1));
+                        float dist = Vector2.Distance(new Vector2(w, h), circleCenter) - radius;
+
+                        Color color = _MixColor(circleColor, new Color(pixel.r, pixel.g, pixel.b, 0.0f), Mathf.SmoothStep(0f, 1.0f, dist * edgeBlur));
+
+                        pixel = _MixColor(pixel, color, color.a);
+                    }
+                }
+                proceduralTexture.SetPixel(w, h, pixel);
+            }
+        }
+        proceduralTexture.Apply();
+        return proceduralTexture;
+    }
+
+}
+```
+
+实践效果：
+
+![](https://i.loli.net/2018/07/06/5b3f4efe3d4d6.png)
+
+至此，本章的学习也算到此结束了，如果需要对这部分的效果内容还需要进行拓展的部分，回头再来看看就行了。
+下一次学习，我们就可以让画面动起来了。
 
 
 
