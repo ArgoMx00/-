@@ -333,5 +333,45 @@ SHADOW_ATTENUATION（i）：用于求阴影值。
 UNITY_LIGHT_ATTENUATION(atten,i,i.worldPos);
 ```
 
+30.通过法线方向和观察方向求得光线方向（求反射）：
+
+```Shader
+//通过观察方向和法线方向得到反射方向
+//物体反射到摄像机中的光线方向，可以由光路可逆的原则来反向求得。
+//也就是说，我们可以计算视角方向关于顶点法线发的反射方向来求得入射方向
+o.worldRefl=reflect(-o.worldViewDir,o.worldNormal);
+```
+
+31.通过法线方向和观察方向以及折射比来求得光线方向（求折射）
+
+```Shader
+//我们使用了CG的refract函数来计算折射方向，他的第一个参数即为入射光线
+//的方向，它必须是归一化后的矢量，第二个参数是表面的法线，也是需要归一化的
+//第三个参数是入射光线所在介质的折射率和折射光线所在介质的折射率之间的比值
+//例如光是从空气射入到玻璃表面，那么这个比值就是1/1.5。这个函数的返回值就是
+//计算所得到的折射方向。
+o.worldRefr=refract(-normalize(o.worldViewDir),normalize(o.worldNormal),_RefractRatio);	
+```
+
+32.得到Cubemap纹理颜色：
+
+```Shader
+//当前例子是求一个折射的颜色，这里的worldRefr是光线方向（实际上是折射入射方向），不需要归一化。
+fixed3 refraction=texCUBE(_Cubemap,i.worldRefr).rgb*_RefractColor.rgb;
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
