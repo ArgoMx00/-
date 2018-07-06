@@ -363,11 +363,176 @@ Shader"Unity Shaders Book/Chapter 10/镜面效果"
 
 ![](https://i.loli.net/2018/07/06/5b3f11f1a4065.png)
 
+四、玻璃效果
 
+在Unity中，我们还可以在Unity Shader中使用一种特殊的Pass来完成获取屏幕图像的目的。这就是GrabPass。
+当我们在Shader中定义了一个GrabPass之后，Unity会把当前屏幕的图像绘制在一张纹理中，以便我们在后续的
+Pass中访问他，我们通常会使用GrabPass来实现诸如玻璃等透明材质的模拟。与使用简单的混合透明不同，使用
+GrabPass可以让我们对该物体后边的图像进行更加复杂的处理，例如实现模拟折射效果。而不再是简单的和原屏
+幕的颜色进行混合。
 
+需要注意的是，在使用GrabPass的时候，我们需要额外小心物体的渲染队列的设置。正如之前所说，GrabPass
+通常用于渲染透明物体，尽管代码里并不包含混合指令，但是我们往往仍然需要把物体的渲染队列设置为透明
+队列才行。这样才能保证渲染不出问题。
 
+在本节中，我们将会使用GrabPass来模拟一个玻璃效果，我们首先使用一张法线纹理来修改模型的法线信息
+，然后使用了之前的反射方法，通过一个CubeMap来模拟玻璃的反射，而在模拟折射的时候，则使用了GrabPass
+获取玻璃后边的屏幕图像，并使用切线空间下的法线对屏幕纹理坐标偏移后，再对屏幕图像进行模拟来近似构成
+折射效果。
 
+我们接下来要用凹凸纹理加上折射效果来渲染出一个玻璃的外框内部有一个实体球的效果图。
+既然要渲染出一个凹凸纹理出来，那么我们肯定要选择切线空间转世界空间的方法。
+我们选择用矩阵转换的方法来处理这个问题，那么我们在顶点着色器中，进行一系列的换算运算，得到实践代码：
 
+```Shader
+v2f vert(a2v v){
+	v2f o;
+
+	o.pos=UnityObjectToClipPos(v.vertex);
+	//得到对应被抓取的屏幕图像的采样坐标、
+	o.scrPos=ComputeGrabScreenPos(o.pos);
+
+	o.uv.xy=TRANSFORM_TEX(v.texcoord,_MainTex);
+	o.uv.zw=TRANSFORM_TEX(v.texcoord,_BumpMap);
+	float3 worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+	fixed3 worldNormal=UnityObjectToWorldNormal(v.normal);
+	fixed3 worldTangent=UnityObjectToWorldDir(v.tangent.xyz);
+	fixed3 worldBinormal=cross(worldNormal,worldTangent)*v.tangent.w;
+	o.TtoW0 = float4(worldTangent.x,worldBinormal.x,worldNormal.x,worldPos.x);
+	o.TtoW1 = float4(worldTangent.y,worldBinormal.y,worldNormal.y,worldPos.y);
+	o.TtoW2 = float4(worldTangent.z,worldBinormal.z,worldNormal.z,worldPos.z);
+	
+	return o;
+}
+```
+
+注意到这里边有一个执行语句：o.scrPos=ComputeGrabScreenPos(o.pos);我们通过调用内置的这个函数（ComputeGrabScreenPos）函数来得到对应被抓取的屏幕图像的采样坐标。
+
+之后的任务就变得更加明确了，我们首先通过TtoW0等变量的w分量得到世界空间下的点的坐标，并且用该值得到片元着色器
+所对应的视角方向。随后，我们对法线纹理进行采样。得到切线空间下的法线方向。然后接下来我们利用这个值和_Distortion
+树型以及_RefractionTex_TexelSize来对屏幕图像的采样坐标进行偏移，模拟折射的效果。_Distortion值越大，偏移量
+就越大，背后物体看起来的形变成就越大。（但是实践中感觉这个值没有什么影响效果的成分）。再接下来，我们对srcPos
+透视除法得到真正的屏幕坐标，再使用该坐标对抓取的屏幕图像_RefractionTex进行采样，得到模拟的折射颜色。
+
+之后，我们把法线方向从切线空间变换到了世界空间下，并据此得到视角方向相对于法线方向的反射方向，随后使用反射方向
+对CubeMap进行采样，并且把结果和主纹理颜色相乘后得到反射颜色。最后，我们使用_RefractAmount树型对反射和折射颜色
+进行一个混合，作为最终的输出颜色。
+
+整体的实践代码和效果如下：
+
+```Shader
+Shader"Unity Shaders Book/Chapter 10/玻璃效果"
+{
+	Properties{
+		//玻璃的材质纹理，默认为白色纹理
+		_MainTex("Main Tex",2D)="white"{}
+		//玻璃的法线纹理
+		_BumpMap("Normal Map",2D)="bump"{}
+		//用于模拟反射的环境纹理
+		_Cubemap("Envivironment Cubemap",Cube)="_Skybox"{}
+		//折射时图像的扭曲程度
+		_Distortion("Distortion",Range(0,100))=10
+		//折射效果
+		_RefractAmount("Refract Amount",Range(0.0,1.0))=1.0
+	}
+	SubShader{
+		//透明物体的渲染队列,保证在进行当前渲染队列之前，不透明的物体都已经
+		//渲染完成了，所以我们才能透过玻璃看到内部物体。
+		Tags{"Queue"="Transparent" "RenderTpye"="Opaque"}
+		//我们通过关键词GrabPass定义了一个抓取屏幕图像的Pass。在这个Pass中
+		//我们定义了一个字符串，该字符串内部的名称决定了抓取得到的屏幕图像
+		//会存入到哪个纹理中。实际上，我们可以省了声明该字符串，但是性能会差
+		GrabPass{"_RefractionTex"}
+
+		Pass{
+			
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag
+
+			#include"UnityCG.cginc"
+
+			sampler2D _MainTex;
+			float4 _MainTex_ST;
+			sampler2D _BumpMap;
+			float4 _BumpMap_ST;
+			samplerCUBE _Cubemap;
+			float _Distortion;
+			fixed _RefractAmount;
+			sampler2D _RefractionTex;
+			// _RefractionTex_TexelSize 可以让我们得到该纹理的素纹大小。
+			float4 _RefractionTex_TexelSize;
+
+			struct a2v{
+				float4 vertex :POSITION;
+				float3 normal:NORMAL;
+				float4 tangent:TANGENT;
+				float2 texcoord:TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float4 scrPos:TEXCOORD0;
+				float4 uv:TEXCOORD1;
+				float4 TtoW0:TEXCOORD2;
+				float4 TtoW1:TEXCOORD3;
+				float4 TtoW2:TEXCOORD4;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+
+				o.pos=UnityObjectToClipPos(v.vertex);
+				//得到对应被抓取的屏幕图像的采样坐标、
+				o.scrPos=ComputeGrabScreenPos(o.pos);
+
+				o.uv.xy=TRANSFORM_TEX(v.texcoord,_MainTex);
+				o.uv.zw=TRANSFORM_TEX(v.texcoord,_BumpMap);
+				float3 worldPos=mul(unity_ObjectToWorld,v.vertex).xyz;
+				fixed3 worldNormal=UnityObjectToWorldNormal(v.normal);
+				fixed3 worldTangent=UnityObjectToWorldDir(v.tangent.xyz);
+				fixed3 worldBinormal=cross(worldNormal,worldTangent)*v.tangent.w;
+				o.TtoW0 = float4(worldTangent.x,worldBinormal.x,worldNormal.x,worldPos.x);
+				o.TtoW1 = float4(worldTangent.y,worldBinormal.y,worldNormal.y,worldPos.y);
+				o.TtoW2 = float4(worldTangent.z,worldBinormal.z,worldNormal.z,worldPos.z);
+	
+				return o;
+			}
+
+			fixed4 frag(v2f i):SV_Target{
+				float3 worldPos=float3(i.TtoW0.w,i.TtoW1.w,i.TtoW2.w);
+				fixed3 worldViewDir=normalize(UnityWorldSpaceViewDir(worldPos));
+
+				//对Normal Map进行采样，得到切线空间下的法线方向。
+				fixed3 bump=UnpackNormal(tex2D(_BumpMap,i.uv.zw));
+				//对其进行偏移，模拟折射效果，_Distortion的值越大，偏移量越大。
+				//玻璃背后的物体看起来形变程度就越大。
+				float2 offset=bump.xy*_Distortion*_RefractionTex_TexelSize.xy;
+
+				fixed3 refrCol=tex2D(_RefractionTex,i.scrPos.xy/i.scrPos.w).rgb;
+
+				
+				bump=normalize(half3(dot(i.TtoW0.xyz,bump),dot(i.TtoW1.xyz,bump),dot(i.TtoW2,bump)));
+
+				fixed3 reflDir=reflect(-worldViewDir,bump);
+				fixed4 texColor=tex2D(_MainTex,i.uv.xy);
+				fixed3 reflCol=texCUBE(_Cubemap,reflDir).rgb*texColor.rgb;
+
+				fixed3 finalColor=reflCol*(1-_RefractAmount)+refrCol*_RefractAmount;
+				return fixed4(finalColor,1);
+
+			}
+
+			ENDCG
+		}
+	}
+}
+```
+
+实践效果：
+
+![](https://i.loli.net/2018/07/06/5b3f2ca4befeb.png)
 
 
 
