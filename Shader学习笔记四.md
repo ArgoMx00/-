@@ -709,5 +709,286 @@ public class Shader_Shape : MonoBehaviour
 至此，本章的学习也算到此结束了，如果需要对这部分的效果内容还需要进行拓展的部分，回头再来看看就行了。
 下一次学习，我们就可以让画面动起来了。
 
+<table><tr><td bgcolor=orange>让画面动起来</td></tr></table>
+
+动画效果往往都是把时间添加到一些变量的计算中，以便在时间变化时画面也可以随之变化。
+
+Unity内置的时间变量有：
+
+![](https://i.loli.net/2018/07/10/5b4435c450707.png)
+
+一、序列帧动画
+
+要想实现序列帧动画，我们先要提供一张包含了关键帧图像的图像。我们利用书中资源进行模拟。
+播放帧序列动画的精髓在于，我们需要在每个时刻计算该时刻下应该播放的关键帧的位子，并对
+该关键帧进行纹理采样。接下来我们对Shader代码进行实践：
+
+```Shader
+Shader"Unity Shaders Book/Chapter 11/帧动画播放效果"
+{
+	Properties{
+		_Color("Color Tint",Color)=(1,1,1,1)
+		//包含了关键帧图像的纹理
+		_MainTex("Image Sequence",2D)="white"{}
+		//该图像在水平方向关键帧的个数
+		_HorizontalAmount("Horizontal Amount",Float)=8
+		//该图像在竖直方向关键帧的个数
+		_VerticalAmount("Vertical Amount",Float)=8
+		//控制序列帧动画的播放速度
+		_Speed("Speed",Range(1,100))=30
+	}
+	SubShader{
+		//因为帧图像通常是透明纹理，所以我们需要设置Pass的相关状态，以来渲染透明的效果：
+		Tags{"Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent"}
+		Pass{
+			//我们将帧图像处理为半透明的效果，所以要关闭深度写入和开启混合。
+			Tags{"LightMode"="ForwardBase"}
+
+			ZWrite Off
+
+			Blend SrcAlpha OneMinusSrcAlpha
+
+			CGPROGRAM
+
+			#pragma vertex vert 
+			#pragma fragment frag 
+
+			#include"UnityCG.cginc"
+
+			fixed4 _Color;
+			sampler2D _MainTex;
+			float4 _MainTex_ST;
+			float _HorizontalAmount;
+			float _VerticalAmount;
+			float _Speed;
+
+			struct a2v{
+				float4 vertex :POSITION;
+				float2 texcoord:TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float2 uv:TEXCOORD0;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.uv=TRANSFORM_TEX(v.texcoord,_MainTex);
+				return o;
+			}
+			fixed4 frag(v2f i):SV_Target{
+				float time=floor(_Time.y*_Speed);
+				float row=floor(time/_HorizontalAmount);
+				float column=time-row*_VerticalAmount;
+
+				half2 uv=i.uv+half2(column,-row);
+
+				uv.x/=_HorizontalAmount;
+				uv.y/=_VerticalAmount;
+
+				fixed4 c=tex2D(_MainTex,uv);
+				c.rgb*_Color;
+				return c;
+
+			}
+
+
+			ENDCG
+
+
+		}
+	}
+}
+```
+
+实践效果：
+
+![](https://i.loli.net/2018/07/10/5b443ddbd4e0f.png)
+
+当然他肯定是动态的。并且根据实践行动得知，一开始我们得到的uv贴图的坐标，是左下角的那个位子。
+
+二、滚动的背景
+
+我们继续为了熟悉运动场景的构成，我们接下来尝试让背景滚动起来。
+
+实践代码：
+
+```Shader
+Shader"Unity Shaders Book/Chapter 11/背景滚动效果"
+{
+	Properties{
+		//较远纹理贴图
+		_MainTex("Base Layer(RGB)",2D)="white"{}
+		//较近纹理贴图
+		_DetailTex("2nd Layer(RGB)",2D)="white"{}
+		//滚动速度
+		_ScrollX("Base layer Scroll Speed",Float)=1.0
+		_Scroll2X("2nd layer Scrool Speed",Float)=1.0
+		//整体亮度 
+		_Multiplier("Layer Multiplier",Float)=1
+	}
+	SubShader{
+		Tags{"RenderType"="Opaque" "Queue"="Geometry"}
+		Pass{
+			Tags{"LightMode"="ForwardBase"}
+			CGPROGRAM
+	
+			#pragma vertex vert
+			#pragma fragment frag 
+
+			#include"UnityCG.cginc"
+
+			sampler2D _MainTex;
+			sampler2D _DetailTex;
+			float4 _MainTex_ST;
+			float4 _DetailTex_ST;
+			float _ScrollX;
+			float _Scroll2X;
+			float _Multiplier;
+
+			struct a2v{
+				float4 vertex:POSITION;
+				float4 texcoord :TEXCOORD0;
+			};
+
+			struct v2f{
+				float4 pos:SV_POSITION;
+				float4 uv:TEXCOORD0;
+			};
+
+			v2f vert(a2v v){
+				v2f o;
+				o.pos=UnityObjectToClipPos(v.vertex);
+				o.uv.xy=TRANSFORM_TEX(v.texcoord,_MainTex)+frac(float2(_ScrollX,0.0)*_Time.y);
+				o.uv.zw=TRANSFORM_TEX(v.texcoord,_DetailTex)+frac(float2(_Scroll2X,0.0)*_Time.y);
+				return o;
+			}
+
+			fixed4 frag(v2f i):SV_Target{
+				fixed4 firstLayer=tex2D(_MainTex,i.uv.xy);
+				fixed4 secondLayer=tex2D(_DetailTex,i.uv.zw);
+				fixed4 c=lerp(firstLayer,secondLayer,secondLayer.a);
+				c.rgb*_Multiplier;
+				return c;
+			}
+			ENDCG
+		}
+	}
+	Fallback"VertexLit"
+}
+```
+
+实际效果：
+
+![](https://i.loli.net/2018/07/10/5b4445700b98f.png)
+
+三、顶点动画
+
+在游戏中，我们常常使用顶点动画来模拟飘动的旗帜、小溪等效果。
+
+我们首先实现以下2D河流流动的效果：
+
+```Shader
+Shader "Unity Shaders Book/Chapter 11/Water" {
+	Properties {
+		_MainTex ("Main Tex", 2D) = "white" {}
+		_Color ("Color Tint", Color) = (1, 1, 1, 1)
+		_Magnitude ("Distortion Magnitude", Float) = 1
+ 		_Frequency ("Distortion Frequency", Float) = 1
+ 		_InvWaveLength ("Distortion Inverse Wave Length", Float) = 10
+ 		_Speed ("Speed", Float) = 0.5
+	}
+	SubShader {
+		// Need to disable batching because of the vertex animation
+		Tags {"Queue"="Transparent" "IgnoreProjector"="True" "RenderType"="Transparent" "DisableBatching"="True"}
+		
+		Pass {
+			Tags { "LightMode"="ForwardBase" }
+			
+			ZWrite Off
+			Blend SrcAlpha OneMinusSrcAlpha
+			Cull Off
+			
+			CGPROGRAM  
+			#pragma vertex vert 
+			#pragma fragment frag
+			
+			#include "UnityCG.cginc" 
+			
+			sampler2D _MainTex;
+			float4 _MainTex_ST;
+			fixed4 _Color;
+			float _Magnitude;
+			float _Frequency;
+			float _InvWaveLength;
+			float _Speed;
+			
+			struct a2v {
+				float4 vertex : POSITION;
+				float4 texcoord : TEXCOORD0;
+			};
+			
+			struct v2f {
+				float4 pos : SV_POSITION;
+				float2 uv : TEXCOORD0;
+			};
+			
+			v2f vert(a2v v) {
+				v2f o;
+				
+				float4 offset;
+				offset.yzw = float3(0.0, 0.0, 0.0);
+				offset.x = sin(_Frequency * _Time.y + v.vertex.x * _InvWaveLength + v.vertex.y * _InvWaveLength + v.vertex.z * _InvWaveLength) * _Magnitude;
+				o.pos = mul(UNITY_MATRIX_MVP, v.vertex + offset);
+				
+				o.uv = TRANSFORM_TEX(v.texcoord, _MainTex);
+				o.uv +=  float2(0.0, _Time.y * _Speed);
+				
+				return o;
+			}
+			
+			fixed4 frag(v2f i) : SV_Target {
+				fixed4 c = tex2D(_MainTex, i.uv);
+				c.rgb *= _Color.rgb;
+				
+				return c;
+			} 
+			
+			ENDCG
+		}
+	}
+	FallBack "Transparent/VertexLit"
+}
+```
+
+![](https://i.loli.net/2018/07/10/5b444d5b5f514.png)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
