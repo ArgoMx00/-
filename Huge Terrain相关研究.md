@@ -391,19 +391,21 @@ class TreeNode
 //我们首先建立一个纯平坦地形，根据摄像头高度之类的相关内容，搞出来一个地形先看着。
 public class LowerTerrain : MonoBehaviour {
     //8193 12 0.12
-    //1025 9 5
+    //1025 9 5 存在断层
+    //129 6 5
+
 
     //从灰度图中提取一个地形
     public Texture2D heightmaps;
 
     public Material tempmaterial;
     private float tim = 0;
-    public const float C = 0.5f;
+    public const float C = 5f;
 
     //长宽
     static public int N = 1025;
     //高
-    static public int H = 300;
+    static public int H = 150;
     static public int LOD = 9;
     private bool[,] IsOpen=new bool[N+1,N+1];
     TreeNode root;
@@ -487,15 +489,19 @@ public class LowerTerrain : MonoBehaviour {
         while (S.Count>0)
         {
             TreeNode Now = S.Dequeue();
-            float L = GetDistance(Pos, new Vector3(Now.Id / N, 0, (float)(Now.Id - (int)(Now.Id / N) * N)));
+
+            int nx = Now.Id / N;
+            int ny = Now.Id - (int)(Now.Id / N) * N;
+            float Bx = (float)(1.0f / (float)N);
+            float Bz = (float)(1.0f / (float)N);
+            float L = GetDistance(Pos, new Vector3(Now.Id / N, GetCellHeight(heightmaps,new Vector2(nx*Bx,ny*Bz)), (float)(Now.Id - (int)(Now.Id / N) * N)));
             float D = (float)N*N/Mathf.Pow(4, Now.Level);
             
             float c = L / D;
             //print(L +  "  " + D);
             if (c < C && Now.Level + 1 <= LOD) 
             {
-                int nx = Now.Id / N;
-                int ny = Now.Id - (int)(Now.Id / N) * N;
+
                 int cx = (int)Mathf.Pow(2,LOD-Now.Level-1);
                 int cy = (int)Mathf.Pow(2,LOD-Now.Level-1);
                 TreeNode C1 = new TreeNode(N * (nx - cx) + (ny - cy));
@@ -519,8 +525,6 @@ public class LowerTerrain : MonoBehaviour {
             }
             else
             {
-                int nx = Now.Id / N;
-                int ny = Now.Id - (int)(Now.Id / N) * N;
                 IsOpen[nx, ny] = false;
             }
         }
@@ -573,12 +577,12 @@ public class LowerTerrain : MonoBehaviour {
                 UV.Add(new Vector2(two.x * Bx, two.z * Bz));
                 UV.Add(new Vector2(three.x * Bx, three.z * Bz));
                 UV.Add(new Vector2(fore.x * Bx, fore.z * Bz));
-
+                
                 one.y = GetCellHeight(heightmaps, new Vector2(one.x * Bx, one.z * Bz));
                 two.y = GetCellHeight(heightmaps, new Vector2(two.x * Bx, two.z * Bz));
                 three.y = GetCellHeight(heightmaps, new Vector2(three.x * Bx, three.z * Bz));
                 fore.y = GetCellHeight(heightmaps, new Vector2(fore.x * Bx, fore.z * Bz));
-
+                
                 
                 vp3.Add(one);
                 vp3.Add(two);
@@ -589,20 +593,20 @@ public class LowerTerrain : MonoBehaviour {
                 array.Add(cnt1 - 4);
                 array.Add(cnt1 - 3);
                 array.Add(cnt1 - 1);
-
+                /*
                 array.Add(cnt1 - 1);
                 array.Add(cnt1 - 3);
                 array.Add(cnt1 - 4);
-
+                */
                 array.Add(cnt1 - 4);
                 array.Add(cnt1 - 1);
                 array.Add(cnt1 - 2);
-
+                /*
                 array.Add(cnt1 - 2);
                 array.Add(cnt1 - 1);
                 array.Add(cnt1 - 4);
-
-                cnt2 += 12;
+                */
+                cnt2 += 6;
 
             }
         }
@@ -626,6 +630,7 @@ public class LowerTerrain : MonoBehaviour {
         */
         print(cnt2/3);
     }
+    
     public float GetCellHeight(Texture2D map,Vector2 uv)
     {
         // 如果贴图不为空
@@ -643,6 +648,7 @@ public class LowerTerrain : MonoBehaviour {
         Color color = map.GetPixel(Mathf.FloorToInt(map.width * uv.x), Mathf.FloorToInt(map.height * uv.y));
         return color;
     }
+    
     public float GetDistance(Vector3 A,Vector3 B)
     {
         float Dis;
@@ -654,6 +660,15 @@ public class LowerTerrain : MonoBehaviour {
     }
 }
 ```
+
+现在阶段遇到的问题：
+
+1.当N=1025&&H=150&&LOD=9&&C=5f的情况下，出现断层。
+
+2.显示效果极其不理想。
+
+
+
 
 
 
