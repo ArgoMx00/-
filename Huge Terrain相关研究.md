@@ -667,6 +667,355 @@ public class LowerTerrain : MonoBehaviour {
 
 2.显示效果极其不理想。
 
+断层问题稍后处理，显示效果不理想，其实原因是要重置一下法线和范围。
+两个语句能够解决这个问题：
+```C#
+//重置法线
+mesh.RecalculateNormals();
+//重置范围
+mesh.RecalculateBounds();
+```
+
+过程代码记录：
+
+```C#
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+//我们的二维网格图左上角第一个位子为（0，0），编码为0；
+[RequireComponent(typeof(MeshFilter))]
+[RequireComponent(typeof(MeshRenderer))]
+class TreeNode
+{
+    //Id换算到二维网格图中的时候的换算公式：
+    //x=Id/N;
+    //y=Id-(Id/N)*N;
+    public int Id;
+
+    //当前点控制的层级
+    //级别换算到真正地形上的大小公式：
+    //Mianji=(N*N)/(Pow(4,Level));
+
+    public int Level;
+    //左上角
+    public TreeNode Child1;
+    //右上角
+    public TreeNode Child2;
+    //左下角
+    public TreeNode Child3;
+    //右上角
+    public TreeNode Child4;
+    //构造函数
+    public TreeNode(int num, TreeNode a, TreeNode b, TreeNode c, TreeNode d)
+    {
+        Id = num;
+
+        Child1 = a;
+        Child2 = b;
+        Child3 = c;
+        Child4 = d;
+    }
+    //构造函数
+    public TreeNode(int num)
+    {
+        Id = num;
+
+        Child1 = null;
+        Child2 = null;
+        Child3 = null;
+        Child4 = null;
+    }
+}
+//我们首先建立一个纯平坦地形，根据摄像头高度之类的相关内容，搞出来一个地形先看着。
+public class LowerTerrain : MonoBehaviour
+{
+    //8193 12 0.12
+    //1025 9 5 存在断层
+    //129 6 5
+
+
+    //从灰度图中提取一个地形
+    public Texture2D heightmaps;
+
+    public Material tempmaterial;
+    private float tim = 0;
+    public float C = 0.02f;
+
+    //长宽
+    public int N = 1025;
+    //高
+    public int H = 150;
+    public int LOD = 9;
+    private bool[,] IsOpen = new bool[15000, 15000];
+    TreeNode root;
+
+    // Use this for initialization
+    void Start()
+    {
+        print("yes");
+        gameObject.AddComponent<MeshFilter>();
+        gameObject.AddComponent<MeshRenderer>();
+        // DrawACircleTest();
+        BuildBaseTerrain();
+        BuildHugeTerrain();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        /*
+        if (tim <= 5f)
+        {
+            tim += Time.deltaTime;
+        }
+        else
+        {
+            tim = 0;
+            BuildBaseTerrain();
+            BuildHugeTerrain();
+        }
+        */
+    }
+    public void DrawACircleTest()
+    {
+        Mesh mesh = gameObject.GetComponent<MeshFilter>().mesh;
+        mesh.Clear();
+        int n = 361;
+        Vector3[] vp3 = new Vector3[n];
+        int[] array = new int[(n - 1) * 3];
+        //每次计算点移动的度数
+        float Move = 1f;
+        //当前转到的度数
+        float Now = 0;
+        //半径
+        float R = 3;
+        //设定圆心
+        vp3[0] = new Vector3(0, 0, 0);
+        for (int i = 1; i < n; i++)
+        {
+            //接下来算圆上每个点的位子；
+            //每次转动角度为Move；
+            float x = vp3[0].x + R * Mathf.Cos(Now * Mathf.PI / 180f);
+            float y = vp3[0].y + R * Mathf.Sin(Now * Mathf.PI / 180f);
+            float z = 0;
+            vp3[i] = new Vector3(x, y, z);
+            Now += Move;
+        }
+        for (int i = 0; i < n - 1; i++)
+        {
+            array[i * 3] = 0;
+            array[i * 3 + 1] = i + 2;
+            array[i * 3 + 2] = i + 1;
+            if (array[i * 3] > n - 1) array[i * 3] -= n - 1;
+            if (array[i * 3 + 1] > n - 1) array[i * 3 + 1] -= n - 1;
+            if (array[i * 3 + 2] > n - 1) array[i * 3 + 2] -= n - 1;
+        }
+        mesh.vertices = vp3;
+        mesh.triangles = array;
+    }
+    public void BuildBaseTerrain()
+    {
+        for (int i = 0; i < N; i++)
+        {
+            for (int j = 0; j < N; j++)
+            {
+                IsOpen[i, j] = false;
+            }
+        }
+        int All = (N) * (N);
+        GameObject camera = GameObject.Find("Main Camera");
+        //得到摄像机镜头的位子。
+        Vector3 Pos = camera.transform.position;
+        print(Pos.x + " " + Pos.y + " " + Pos.z);
+        //然后Bfs得到这颗树。
+        //同时能够得到IsOpen的情况
+
+
+        Queue<TreeNode> S = new Queue<TreeNode>();
+        S.Clear();
+        TreeNode temp = new TreeNode(All / 2);
+        temp.Level = 0;
+        S.Enqueue(temp);
+        root = temp;
+        while (S.Count > 0)
+        {
+            TreeNode Now = S.Dequeue();
+
+            int nx = Now.Id / N;
+            int ny = Now.Id - (int)(Now.Id / N) * N;
+            float Bx = (float)(1.0f / (float)N);
+            float Bz = (float)(1.0f / (float)N);
+            float L = GetDistance(Pos, new Vector3(Now.Id / N, GetCellHeight(heightmaps, new Vector2(nx * Bx, ny * Bz)), (float)(Now.Id - (int)(Now.Id / N) * N)));
+            float D = (float)N * N / Mathf.Pow(4, Now.Level);
+
+            float c = L / D;
+            //print(L +  "  " + D);
+            if (c < C && Now.Level + 1 <= LOD)
+            {
+
+                int cx = (int)Mathf.Pow(2, LOD - Now.Level - 1);
+                int cy = (int)Mathf.Pow(2, LOD - Now.Level - 1);
+                TreeNode C1 = new TreeNode(N * (nx - cx) + (ny - cy));
+                TreeNode C2 = new TreeNode(N * (nx - cx) + (ny + cy));
+                TreeNode C3 = new TreeNode(N * (nx + cx) + (ny - cy));
+                TreeNode C4 = new TreeNode(N * (nx + cx) + (ny + cy));
+                C1.Level = Now.Level + 1;
+                C2.Level = Now.Level + 1;
+                C3.Level = Now.Level + 1;
+                C4.Level = Now.Level + 1;
+                Now.Child1 = C1;
+                Now.Child2 = C2;
+                Now.Child3 = C3;
+                Now.Child4 = C4;
+                print("继续分裂:" + nx + " " + ny);
+                IsOpen[nx, ny] = true;
+                S.Enqueue(C1);
+                S.Enqueue(C2);
+                S.Enqueue(C3);
+                S.Enqueue(C4);
+            }
+            else
+            {
+                IsOpen[nx, ny] = false;
+            }
+        }
+        /*
+        for(int i=0;i<N;i++)
+        {
+            print(IsOpen[i, 0] + " " + IsOpen[i, 1] + " " + IsOpen[i, 2] + " " + IsOpen[i, 3] + " " + IsOpen[i, 4] + " " + IsOpen[i, 5]);
+        }
+        */
+    }
+    public void BuildHugeTerrain()
+    {
+        int cnt = 0;
+        int cnt1 = 0;
+        int cnt2 = 0;
+        List<Vector3> vp3 = new List<Vector3>();
+        List<Vector2> UV = new List<Vector2>();
+        List<int> array = new List<int>();
+        Queue<TreeNode> S = new Queue<TreeNode>();
+        S.Enqueue(root);
+        while (S.Count > 0)
+        {
+            TreeNode Now = S.Dequeue();
+            if (Now.Child1 != null && Now.Child2 != null && Now.Child3 != null && Now.Child4 != null)
+            {
+                TreeNode c1 = Now.Child1;
+                TreeNode c2 = Now.Child2;
+                TreeNode c3 = Now.Child3;
+                TreeNode c4 = Now.Child4;
+                S.Enqueue(c1);
+                S.Enqueue(c2);
+                S.Enqueue(c3);
+                S.Enqueue(c4);
+            }
+            else
+            {
+                //我们是根据灰度图的高度图来计算点，需要提前做好UV点坐标，才能够得到每个点的真正高度
+                //这个点值得注意一下。、
+                int nx = Now.Id / N;
+                int ny = Now.Id - (int)(Now.Id / N) * N;
+                int cx = (int)Mathf.Pow(2, LOD - Now.Level);
+                int cy = (int)Mathf.Pow(2, LOD - Now.Level);
+                Vector3 one = new Vector3(nx - cx, 0, ny - cy);
+                Vector3 two = new Vector3(nx - cx, 0, ny + cy);
+                Vector3 three = new Vector3(nx + cx, 0, ny - cy);
+                Vector3 fore = new Vector3(nx + cx, 0, ny + cy);
+                float Bx = (float)(1.0f / (float)N);
+                float Bz = (float)(1.0f / (float)N);
+                UV.Add(new Vector2(one.x * Bx, one.z * Bz));
+                UV.Add(new Vector2(two.x * Bx, two.z * Bz));
+                UV.Add(new Vector2(three.x * Bx, three.z * Bz));
+                UV.Add(new Vector2(fore.x * Bx, fore.z * Bz));
+
+                one.y = GetCellHeight(heightmaps, new Vector2(one.x * Bx, one.z * Bz));
+                two.y = GetCellHeight(heightmaps, new Vector2(two.x * Bx, two.z * Bz));
+                three.y = GetCellHeight(heightmaps, new Vector2(three.x * Bx, three.z * Bz));
+                fore.y = GetCellHeight(heightmaps, new Vector2(fore.x * Bx, fore.z * Bz));
+
+
+                vp3.Add(one);
+                vp3.Add(two);
+                vp3.Add(three);
+                vp3.Add(fore);
+
+                cnt += 4; cnt1 += 4;
+                array.Add(cnt1 - 4);
+                array.Add(cnt1 - 3);
+                array.Add(cnt1 - 1);
+                /*
+                array.Add(cnt1 - 1);
+                array.Add(cnt1 - 3);
+                array.Add(cnt1 - 4);
+                */
+                array.Add(cnt1 - 4);
+                array.Add(cnt1 - 1);
+                array.Add(cnt1 - 2);
+                /*
+                array.Add(cnt1 - 2);
+                array.Add(cnt1 - 1);
+                array.Add(cnt1 - 4);
+                */
+                cnt2 += 6;
+
+            }
+        }
+        print(cnt + "   " + cnt1 + "    " + cnt2);
+        Vector2[] uv = new Vector2[cnt];
+        Vector3[] vpp = new Vector3[cnt1];
+        int[] arrray = new int[cnt2];
+        for (int i = 0; i < cnt; i++) uv[i] = UV[i];
+        for (int i = 0; i < cnt1; i++) vpp[i] = vp3[i];
+        for (int i = 0; i < cnt2; i++) arrray[i] = array[i];
+        Mesh mesh = gameObject.GetComponent<MeshFilter>().mesh;
+        mesh.vertices = vpp;
+        mesh.uv = uv;
+        mesh.triangles = arrray;
+        gameObject.GetComponent<Renderer>().material = tempmaterial;
+        //重置法线
+        mesh.RecalculateNormals();
+        //重置范围
+        mesh.RecalculateBounds();
+        /*
+        for (int i = 0; i < cnt; i++) 
+        {
+            print(vpp[i].x + " " + vpp[i].z + "Uv：" + uv[i].x + " " +uv[i].y);
+        }
+        */
+        print(cnt2 / 3);
+    }
+
+    public float GetCellHeight(Texture2D map, Vector2 uv)
+    {
+        // 如果贴图不为空
+        if (map != null)
+        {
+            Color c = GetCellColor(map, uv);
+            float gray = c.grayscale;
+            float h = H * gray;
+            return h;
+        }
+        else return 0;
+    }
+    public Color GetCellColor(Texture2D map, Vector2 uv)
+    {
+        Color color = map.GetPixel(Mathf.FloorToInt(map.width * uv.x), Mathf.FloorToInt(map.height * uv.y));
+        return color;
+    }
+
+    public float GetDistance(Vector3 A, Vector3 B)
+    {
+        float Dis;
+        //print("A:" + A.x + " " + A.y + " " + A.z);
+        //print("B:" + B.x + " " + B.y + " " + B.z);
+        Dis = Mathf.Sqrt((A.x - B.x) * (A.x - B.x) + (A.y - B.y) * (A.y - B.y) + (A.z - B.z) * (A.z - B.z));
+        //print("Dis:"+Dis);
+        return Dis;
+    }
+}
+```
 
 
 
