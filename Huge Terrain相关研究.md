@@ -1,3 +1,5 @@
+值得学习记录的博客：http://liweizhaolili.blog.163.com/blog/static/162307442013621101937980/
+
 Large Terrain Rendering：https://blog.csdn.net/qq_29523119/article/details/56017155
 
 一、了解LOD是什么
