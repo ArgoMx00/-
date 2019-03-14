@@ -1,5 +1,8 @@
 客户端中，引入了几个类似Json的代码。
 
+```c++
+print
+```
 ```c#
 using System;
 using System.Collections.Generic;
