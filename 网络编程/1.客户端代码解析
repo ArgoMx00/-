@@ -1,7 +1,10 @@
 客户端中，引入了几个类似Json的代码。
 
-```
-print
+```c++
+#include <windows.h>
+
+LPCTSTR WndClassName = "firstwindow";
+HWND hwnd = NULL;
 ```
 ```c#
 using System;
